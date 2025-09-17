@@ -1,4 +1,3 @@
-// src/screens/SettingsScreen.js
 import React, {useState} from 'react';
 import {View, Text, StyleSheet, ScrollView, Alert, Switch} from 'react-native';
 import {List, Button, Divider} from 'react-native-paper';
@@ -11,7 +10,6 @@ const SettingsScreen = () => {
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
   const [isPremium, setIsPremium] = useState(false);
 
-  // Check biometrics availability on component mount
   React.useEffect(() => {
     checkBiometricsAvailability();
   }, []);
@@ -32,7 +30,6 @@ const SettingsScreen = () => {
   const handleToggleBiometrics = async value => {
     if (value) {
       try {
-        // Prompt user to authenticate with biometrics
         const {success} = await Biometrics.simplePrompt({
           promptMessage: 'Authenticate to enable biometrics',
         });
@@ -65,7 +62,6 @@ const SettingsScreen = () => {
   };
 
   const handleContactSupport = () => {
-    // This would open email client or support form
     Alert.alert('Contact Support', 'Support email: support@applock.com');
   };
 
@@ -78,29 +74,34 @@ const SettingsScreen = () => {
       <Text style={styles.title}>Settings</Text>
 
       <List.Section>
-        <List.Subheader>Security</List.Subheader>
+        <List.Subheader style={styles.sectionHeader}>Security</List.Subheader>
         <List.Item
           title="Change Master Password"
           description="Update your security PIN"
-          left={props => <List.Icon {...props} icon="lock" />}
+          left={props => <List.Icon {...props} icon="lock" color="#1E88E5" />}
           onPress={handleChangePassword}
         />
         <List.Item
           title="Biometric Authentication"
           description="Use fingerprint to unlock apps"
-          left={props => <List.Icon {...props} icon="fingerprint" />}
+          left={props => (
+            <List.Icon {...props} icon="fingerprint" color="#1E88E5" />
+          )}
           right={() => (
             <Switch
               value={biometricsEnabled}
               onValueChange={handleToggleBiometrics}
-              color="#6200ee"
+              thumbColor={biometricsEnabled ? '#1E88E5' : '#f4f3f4'}
+              trackColor={{false: '#767577', true: '#BBDEFB'}}
             />
           )}
         />
         <List.Item
           title="Security Question"
           description="Set up PIN recovery question"
-          left={props => <List.Icon {...props} icon="help-circle" />}
+          left={props => (
+            <List.Icon {...props} icon="help-circle" color="#1E88E5" />
+          )}
           onPress={handleSecurityQuestion}
         />
       </List.Section>
@@ -108,7 +109,7 @@ const SettingsScreen = () => {
       <Divider style={styles.divider} />
 
       <List.Section>
-        <List.Subheader>Premium</List.Subheader>
+        <List.Subheader style={styles.sectionHeader}>Premium</List.Subheader>
         <List.Item
           title={isPremium ? 'Premium Activated' : 'Upgrade to Premium'}
           description={
@@ -120,7 +121,7 @@ const SettingsScreen = () => {
             <List.Icon
               {...props}
               icon="crown"
-              color={isPremium ? 'gold' : '#6200ee'}
+              color={isPremium ? '#FFD700' : '#1E88E5'}
             />
           )}
           onPress={handleUpgradeToPremium}
@@ -130,17 +131,21 @@ const SettingsScreen = () => {
       <Divider style={styles.divider} />
 
       <List.Section>
-        <List.Subheader>Support</List.Subheader>
+        <List.Subheader style={styles.sectionHeader}>Support</List.Subheader>
         <List.Item
           title="Contact Support"
           description="Get help with the app"
-          left={props => <List.Icon {...props} icon="headset" />}
+          left={props => (
+            <List.Icon {...props} icon="headset" color="#1E88E5" />
+          )}
           onPress={handleContactSupport}
         />
         <List.Item
           title="About"
           description="App version and information"
-          left={props => <List.Icon {...props} icon="information" />}
+          left={props => (
+            <List.Icon {...props} icon="information" color="#1E88E5" />
+          )}
           onPress={handleAbout}
         />
       </List.Section>
@@ -155,18 +160,23 @@ const SettingsScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#FFFFFF',
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     textAlign: 'center',
     marginVertical: 20,
-    color: '#6200ee',
+    color: '#1E88E5',
+  },
+  sectionHeader: {
+    color: '#1E88E5',
+    fontWeight: '600',
   },
   divider: {
     marginVertical: 10,
     marginHorizontal: 16,
+    backgroundColor: '#E0E0E0',
   },
   footer: {
     padding: 20,

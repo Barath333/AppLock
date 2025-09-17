@@ -1,21 +1,52 @@
-import React from 'react';
-import {StyleSheet} from 'react-native';
-import {Provider as PaperProvider} from 'react-native-paper';
+import React, {useState, useEffect} from 'react';
+import {StyleSheet, StatusBar} from 'react-native';
+import {Provider as PaperProvider, DefaultTheme} from 'react-native-paper';
 import AppNavigator from './src/navigation/AppNavigator';
+import {GestureHandlerRootView} from 'react-native-gesture-handler';
+import SimpleSplashScreen from './src/components/SimpleSplashScreen';
+
+// Custom theme with #1E88E5 as primary color
+const theme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    primary: '#1E88E5',
+    accent: '#4FC3F7',
+    background: '#FFFFFF',
+    surface: '#FFFFFF',
+    text: '#333333',
+    placeholder: '#888888',
+  },
+};
 
 export default function App() {
+  const [isSplashVisible, setIsSplashVisible] = useState(true);
+
+  const handleSplashComplete = () => {
+    setIsSplashVisible(false);
+  };
+
+  if (isSplashVisible) {
+    return (
+      <GestureHandlerRootView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <SimpleSplashScreen onAnimationComplete={handleSplashComplete} />
+      </GestureHandlerRootView>
+    );
+  }
+
   return (
-    <PaperProvider>
-      <AppNavigator />
-    </PaperProvider>
+    <GestureHandlerRootView style={styles.container}>
+      <PaperProvider theme={theme}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <AppNavigator />
+      </PaperProvider>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });
