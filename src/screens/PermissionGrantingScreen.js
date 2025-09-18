@@ -54,7 +54,9 @@ const PermissionGrantingScreen = () => {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView
+      contentContainerStyle={styles.container}
+      showsVerticalScrollIndicator={false}>
       <Animated.View
         style={{opacity: fadeAnim, transform: [{translateY: slideAnim}]}}>
         <View style={styles.header}>
@@ -161,6 +163,7 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginVertical: 30,
+    marginBottom: 10,
   },
   iconContainer: {
     width: 100,
@@ -169,7 +172,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#42A5F5',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 10,
     elevation: 4,
     shadowColor: '#1E88E5',
     shadowOffset: {width: 0, height: 2},
@@ -237,7 +240,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   continueButton: {
-    marginTop: 30,
+    marginTop: 20,
     paddingVertical: 8,
     borderRadius: 10,
     backgroundColor: '#42A5F5',
