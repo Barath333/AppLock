@@ -9,6 +9,16 @@ import {
 } from 'react-native';
 import {TextInput, Button} from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import {
+  BannerAd,
+  BannerAdSize,
+  TestIds,
+  useForeground,
+} from 'react-native-google-mobile-ads';
+
+const adUnitId = __DEV__
+  ? TestIds.ADAPTIVE_BANNER
+  : 'ca-app-pub-8251684647444428~4262993578';
 
 const {width, height} = Dimensions.get('window');
 
@@ -51,6 +61,13 @@ const LockScreen = ({appName, appIcon, onUnlock}) => {
 
   return (
     <View style={styles.container}>
+      <View style={styles.adContainer}>
+        <BannerAd
+          unitId={adUnitId}
+          size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
+        />
+      </View>
+
       <View style={styles.content}>
         <Animated.View
           style={[
@@ -115,6 +132,11 @@ const LockScreen = ({appName, appIcon, onUnlock}) => {
         </Button>
       </View>
 
+      <BannerAd
+        unitId={adUnitId}
+        size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
+      />
+
       <View style={styles.footer}>
         <Text style={styles.footerText}>App Lock - Secure Your Privacy</Text>
       </View>
@@ -128,6 +150,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  adContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    marginTop: 20,
   },
   content: {
     flex: 1,
