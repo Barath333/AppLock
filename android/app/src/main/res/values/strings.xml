@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">AppLock</string>
+    <string name="accessibility_service_description">App Lock accessibility service to detect app launches</string>
 </resources>

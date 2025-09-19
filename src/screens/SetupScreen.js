@@ -41,7 +41,11 @@ const SetupScreen = () => {
     }
 
     try {
-      await Keychain.setGenericPassword('applock_pin', pin);
+      // Securely store the PIN using Keychain
+      await Keychain.setGenericPassword('applock_pin', pin, {
+        service: 'applock_service',
+        accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+      });
       navigation.navigate('Main', {screen: 'Home'});
     } catch (error) {
       Alert.alert('Error', 'Failed to save PIN');

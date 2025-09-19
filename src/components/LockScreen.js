@@ -9,12 +9,8 @@ import {
 } from 'react-native';
 import {TextInput, Button} from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import {
-  BannerAd,
-  BannerAdSize,
-  TestIds,
-  useForeground,
-} from 'react-native-google-mobile-ads';
+import * as Keychain from 'react-native-keychain';
+import {BannerAd, BannerAdSize, TestIds} from 'react-native-google-mobile-ads';
 
 const adUnitId = __DEV__
   ? TestIds.ADAPTIVE_BANNER
@@ -26,37 +22,81 @@ const LockScreen = ({appName, appIcon, onUnlock}) => {
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
-  const handleUnlock = () => {
-    if (pin === '1234') {
-      onUnlock();
-    } else {
-      setError('Invalid PIN');
-      setPin('');
-      Animated.sequence([
-        Animated.timing(shakeAnim, {
-          toValue: 10,
-          duration: 100,
-          useNativeDriver: true,
-        }),
-        Animated.timing(shakeAnim, {
-          toValue: -10,
-          duration: 100,
-          useNativeDriver: true,
-        }),
-        Animated.timing(shakeAnim, {
-          toValue: 10,
-          duration: 100,
-          useNativeDriver: true,
-        }),
-        Animated.timing(shakeAnim, {
-          toValue: 0,
-          duration: 100,
-          useNativeDriver: true,
-        }),
-      ]).start();
+  const handleUnlock = async () => {
+    setIsLoading(true);
+    try {
+      // Retrieve the stored PIN from Keychain
+      const credentials = await Keychain.getGenericPassword({
+        service: 'applock_service',
+      });
+
+      if (credentials && credentials.password === pin) {
+        onUnlock();
+      } else {
+        setError('Invalid PIN');
+        setPin('');
+        // Shake animation for wrong PIN
+        Animated.sequence([
+          Animated.timing(shakeAnim, {
+            toValue: 10,
+            duration: 100,
+            useNativeDriver: true,
+          }),
+          Animated.timing(shakeAnim, {
+            toValue: -10,
+            duration: 100,
+            useNativeDriver: true,
+          }),
+          Animated.timing(shakeAnim, {
+            toValue: 10,
+            duration: 100,
+            useNativeDriver: true,
+          }),
+          Animated.timing(shakeAnim, {
+            toValue: 0,
+            duration: 100,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      }
+    } catch (error) {
+      setError('Authentication error');
+      console.error('Keychain error:', error);
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  const handleForgotPin = async () => {
+    Alert.alert(
+      'Reset PIN',
+      'This will require you to set up a new PIN. All your locked apps will be unlocked.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Reset',
+          onPress: async () => {
+            try {
+              await Keychain.resetGenericPassword({service: 'applock_service'});
+              // Navigate to setup screen or handle reset
+              Alert.alert(
+                'Success',
+                'PIN has been reset. Please set up a new PIN.',
+              );
+            } catch (error) {
+              Alert.alert('Error', 'Failed to reset PIN');
+            }
+          },
+          style: 'destructive',
+        },
+      ],
+    );
   };
 
   return (
@@ -116,16 +156,15 @@ const LockScreen = ({appName, appIcon, onUnlock}) => {
           mode="contained"
           onPress={handleUnlock}
           style={styles.unlockButton}
-          disabled={pin.length < 4}
+          disabled={pin.length < 4 || isLoading}
+          loading={isLoading}
           labelStyle={styles.unlockButtonLabel}>
           Unlock
         </Button>
 
         <Button
           mode="text"
-          onPress={() => {
-            /* Handle forgot PIN */
-          }}
+          onPress={handleForgotPin}
           style={styles.forgotButton}
           labelStyle={styles.forgotButtonLabel}>
           Forgot PIN?

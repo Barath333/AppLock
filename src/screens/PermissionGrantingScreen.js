@@ -1,21 +1,61 @@
-import React, {useRef} from 'react';
+import React, {useRef, useState, useEffect} from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  Linking,
   Alert,
   Animated,
+  AppState,
+  NativeEventEmitter,
 } from 'react-native';
 import {Button, Card} from 'react-native-paper';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import {NativeModules} from 'react-native';
+
+const {PermissionModule} = NativeModules;
 
 const PermissionGrantingScreen = () => {
   const navigation = useNavigation();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
+
+  const [permissions, setPermissions] = useState({
+    accessibility: false,
+    overlay: false,
+    usage: false,
+  });
+
+  const [eventEmitter] = useState(new NativeEventEmitter(PermissionModule));
+
+  useFocusEffect(
+    React.useCallback(() => {
+      checkAllPermissions();
+    }, []),
+  );
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (nextAppState === 'active') {
+        checkAllPermissions();
+      }
+    });
+
+    // Listen for accessibility service events
+    const accessibilitySubscription = eventEmitter.addListener(
+      'onAppOpened',
+      data => {
+        console.log('App opened:', data.packageName);
+        // You can handle app opening events here
+      },
+    );
+
+    return () => {
+      subscription.remove();
+      accessibilitySubscription.remove();
+    };
+  }, []);
 
   React.useEffect(() => {
     Animated.parallel([
@@ -32,25 +72,78 @@ const PermissionGrantingScreen = () => {
     ]).start();
   }, [fadeAnim, slideAnim]);
 
+  const checkAllPermissions = async () => {
+    try {
+      const accessibility =
+        await PermissionModule.getAccessibilityServiceStatus();
+      const overlay = await PermissionModule.isOverlayPermissionGranted();
+      const usage = await PermissionModule.isUsageAccessGranted();
+
+      setPermissions({
+        accessibility,
+        overlay,
+        usage,
+      });
+    } catch (error) {
+      console.error('Error checking permissions:', error);
+    }
+  };
+
   const requestAccessibilityPermission = async () => {
     try {
-      Linking.openSettings();
+      PermissionModule.openAccessibilitySettings();
+
+      // Check status again after a delay
+      setTimeout(() => {
+        checkAllPermissions();
+      }, 1000);
     } catch (error) {
-      Alert.alert('Error', 'Could not open settings');
+      Alert.alert('Error', 'Could not open accessibility settings');
     }
   };
 
   const requestOverlayPermission = async () => {
     try {
-      Alert.alert('Info', 'Please grant overlay permission in the next screen');
-      Linking.openSettings();
+      PermissionModule.openOverlayPermissionSettings();
+
+      // Check status again after a delay
+      setTimeout(() => {
+        checkAllPermissions();
+      }, 1000);
     } catch (error) {
       Alert.alert('Error', 'Could not request overlay permission');
     }
   };
 
+  const requestUsagePermission = async () => {
+    try {
+      PermissionModule.openUsageAccessSettings();
+
+      // Check status again after a delay
+      setTimeout(() => {
+        checkAllPermissions();
+      }, 1000);
+    } catch (error) {
+      Alert.alert('Error', 'Could not open usage access settings');
+    }
+  };
+
   const arePermissionsGranted = () => {
+    // if (permissions.accessibility && permissions.overlay && permissions.usage) {
+    //   navigation.navigate('Setup');
+    // } else {
+    //   Alert.alert(
+    //     'Permissions Required',
+    //     'Please grant all required permissions to continue using the app.',
+    //   );
+    // }
     navigation.navigate('Setup');
+  };
+
+  const getButtonLabel = permissionName => {
+    return permissions[permissionName]
+      ? 'Permission Granted'
+      : 'Grant Permission';
   };
 
   return (
@@ -72,8 +165,16 @@ const PermissionGrantingScreen = () => {
         <Card style={styles.permissionCard}>
           <Card.Content>
             <View style={styles.permissionItem}>
-              <View style={styles.permissionIcon}>
-                <Icon name="account-lock" size={30} color="#1E88E5" />
+              <View
+                style={[
+                  styles.permissionIcon,
+                  permissions.accessibility && styles.grantedIcon,
+                ]}>
+                <Icon
+                  name="account-lock"
+                  size={30}
+                  color={permissions.accessibility ? '#4CAF50' : '#1E88E5'}
+                />
               </View>
               <View style={styles.permissionText}>
                 <Text style={styles.permissionTitle}>
@@ -82,14 +183,21 @@ const PermissionGrantingScreen = () => {
                 <Text style={styles.permissionDesc}>
                   Required to detect when apps are launched and lock them
                 </Text>
+                {permissions.accessibility && (
+                  <Text style={styles.grantedText}>Service enabled</Text>
+                )}
               </View>
             </View>
             <Button
               mode="contained"
               onPress={requestAccessibilityPermission}
-              style={styles.button}
-              labelStyle={styles.buttonLabel}>
-              Grant Permission
+              style={[
+                styles.button,
+                permissions.accessibility && styles.grantedButton,
+              ]}
+              labelStyle={styles.buttonLabel}
+              disabled={permissions.accessibility}>
+              {getButtonLabel('accessibility')}
             </Button>
           </Card.Content>
         </Card>
@@ -97,8 +205,16 @@ const PermissionGrantingScreen = () => {
         <Card style={styles.permissionCard}>
           <Card.Content>
             <View style={styles.permissionItem}>
-              <View style={styles.permissionIcon}>
-                <Icon name="layers" size={30} color="#1E88E5" />
+              <View
+                style={[
+                  styles.permissionIcon,
+                  permissions.overlay && styles.grantedIcon,
+                ]}>
+                <Icon
+                  name="layers"
+                  size={30}
+                  color={permissions.overlay ? '#4CAF50' : '#1E88E5'}
+                />
               </View>
               <View style={styles.permissionText}>
                 <Text style={styles.permissionTitle}>
@@ -107,14 +223,21 @@ const PermissionGrantingScreen = () => {
                 <Text style={styles.permissionDesc}>
                   Required to show the lock screen over other applications
                 </Text>
+                {permissions.overlay && (
+                  <Text style={styles.grantedText}>Permission granted</Text>
+                )}
               </View>
             </View>
             <Button
               mode="contained"
               onPress={requestOverlayPermission}
-              style={styles.button}
-              labelStyle={styles.buttonLabel}>
-              Grant Permission
+              style={[
+                styles.button,
+                permissions.overlay && styles.grantedButton,
+              ]}
+              labelStyle={styles.buttonLabel}
+              disabled={permissions.overlay}>
+              {getButtonLabel('overlay')}
             </Button>
           </Card.Content>
         </Card>
@@ -122,22 +245,34 @@ const PermissionGrantingScreen = () => {
         <Card style={styles.permissionCard}>
           <Card.Content>
             <View style={styles.permissionItem}>
-              <View style={styles.permissionIcon}>
-                <Icon name="chart-bar" size={30} color="#1E88E5" />
+              <View
+                style={[
+                  styles.permissionIcon,
+                  permissions.usage && styles.grantedIcon,
+                ]}>
+                <Icon
+                  name="chart-bar"
+                  size={30}
+                  color={permissions.usage ? '#4CAF50' : '#1E88E5'}
+                />
               </View>
               <View style={styles.permissionText}>
                 <Text style={styles.permissionTitle}>Usage Access</Text>
                 <Text style={styles.permissionDesc}>
                   Required to see which apps are installed and running
                 </Text>
+                {permissions.usage && (
+                  <Text style={styles.grantedText}>Permission granted</Text>
+                )}
               </View>
             </View>
             <Button
               mode="contained"
-              onPress={requestAccessibilityPermission}
-              style={styles.button}
-              labelStyle={styles.buttonLabel}>
-              Grant Permission
+              onPress={requestUsagePermission}
+              style={[styles.button, permissions.usage && styles.grantedButton]}
+              labelStyle={styles.buttonLabel}
+              disabled={permissions.usage}>
+              {getButtonLabel('usage')}
             </Button>
           </Card.Content>
         </Card>
@@ -149,6 +284,12 @@ const PermissionGrantingScreen = () => {
           labelStyle={styles.continueButtonLabel}>
           Continue
         </Button>
+
+        <View style={styles.infoContainer}>
+          <Text style={styles.infoText}>
+            Note: After granting permissions, return to this screen to continue.
+          </Text>
+        </View>
       </Animated.View>
     </ScrollView>
   );
@@ -216,6 +357,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 15,
   },
+  grantedIcon: {
+    backgroundColor: '#E8F5E9',
+  },
   permissionText: {
     flex: 1,
   },
@@ -230,10 +374,19 @@ const styles = StyleSheet.create({
     color: '#666',
     lineHeight: 20,
   },
+  grantedText: {
+    fontSize: 14,
+    color: '#4CAF50',
+    fontWeight: '600',
+    marginTop: 5,
+  },
   button: {
     marginTop: 5,
     borderRadius: 10,
     backgroundColor: '#42A5F5',
+  },
+  grantedButton: {
+    backgroundColor: '#4CAF50',
   },
   buttonLabel: {
     fontSize: 14,
@@ -249,6 +402,19 @@ const styles = StyleSheet.create({
   continueButtonLabel: {
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  infoContainer: {
+    marginTop: 20,
+    padding: 10,
+    backgroundColor: '#FFF3E0',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+  },
+  infoText: {
+    color: '#E65100',
+    fontSize: 14,
+    textAlign: 'center',
   },
 });
 
