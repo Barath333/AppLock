@@ -11,6 +11,10 @@ class CustomPackage : ReactPackage {
     }
 
     override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
-        return listOf(PermissionModule(reactContext))
+        return listOf(
+            PermissionModule(reactContext),
+            AppListModule(reactContext),
+            AppLockModule(reactContext) // Add this line
+        )
     }
 }

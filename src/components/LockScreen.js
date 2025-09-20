@@ -1,4 +1,4 @@
-import React, {useState, useRef} from 'react';
+import React, {useState, useRef, useEffect} from 'react';
 import {
   View,
   Text,
@@ -6,11 +6,21 @@ import {
   Animated,
   Easing,
   Dimensions,
+  Image,
+  Modal,
+  AppState,
+  BackHandler,
 } from 'react-native';
 import {TextInput, Button} from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import * as Keychain from 'react-native-keychain';
 import {BannerAd, BannerAdSize, TestIds} from 'react-native-google-mobile-ads';
+import {NativeEventEmitter, NativeModules} from 'react-native';
+
+const {AppAccessibilityService} = NativeModules;
+const accessibilityEventEmitter = new NativeEventEmitter(
+  AppAccessibilityService,
+);
 
 const adUnitId = __DEV__
   ? TestIds.ADAPTIVE_BANNER
@@ -18,27 +28,33 @@ const adUnitId = __DEV__
 
 const {width, height} = Dimensions.get('window');
 
-const LockScreen = ({appName, appIcon, onUnlock}) => {
+const LockScreen = ({visible, appInfo, onUnlock, onClose}) => {
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
+  useEffect(() => {
+    if (visible) {
+      setPin('');
+      setError('');
+    }
+  }, [visible, appInfo]);
+
   const handleUnlock = async () => {
     setIsLoading(true);
     try {
-      // Retrieve the stored PIN from Keychain
       const credentials = await Keychain.getGenericPassword({
         service: 'applock_service',
       });
 
       if (credentials && credentials.password === pin) {
         onUnlock();
+        onClose();
       } else {
         setError('Invalid PIN');
         setPin('');
-        // Shake animation for wrong PIN
         Animated.sequence([
           Animated.timing(shakeAnim, {
             toValue: 10,
@@ -70,116 +86,158 @@ const LockScreen = ({appName, appIcon, onUnlock}) => {
     }
   };
 
+  // In your LockScreen.js, update the handleForgotPin function:
   const handleForgotPin = async () => {
-    Alert.alert(
-      'Reset PIN',
-      'This will require you to set up a new PIN. All your locked apps will be unlocked.',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Reset',
-          onPress: async () => {
-            try {
-              await Keychain.resetGenericPassword({service: 'applock_service'});
-              // Navigate to setup screen or handle reset
-              Alert.alert(
-                'Success',
-                'PIN has been reset. Please set up a new PIN.',
-              );
-            } catch (error) {
-              Alert.alert('Error', 'Failed to reset PIN');
-            }
+    if (onForgotPin) {
+      onForgotPin();
+    } else {
+      Alert.alert(
+        'Reset PIN',
+        'This will require you to set up a new PIN. All your locked apps will be unlocked.',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
           },
-          style: 'destructive',
-        },
-      ],
-    );
+          {
+            text: 'Reset',
+            onPress: async () => {
+              try {
+                await Keychain.resetGenericPassword({
+                  service: 'applock_service',
+                });
+                Alert.alert(
+                  'Success',
+                  'PIN has been reset. Please set up a new PIN.',
+                );
+              } catch (error) {
+                Alert.alert('Error', 'Failed to reset PIN');
+              }
+            },
+            style: 'destructive',
+          },
+        ],
+      );
+    }
   };
 
+  // Prevent back button from closing the lock screen
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => visible,
+    );
+    return () => backHandler.remove();
+  }, [visible]);
+
+  if (!visible || !appInfo) return null;
+
   return (
-    <View style={styles.container}>
-      <View style={styles.adContainer}>
+    <Modal
+      visible={visible}
+      transparent={false}
+      animationType="fade"
+      hardwareAccelerated
+      statusBarTranslucent
+      onRequestClose={() => {
+        // Handle back button on Android
+        if (visible) {
+          // Do nothing when lock screen is visible
+          return;
+        }
+      }}>
+      <View style={styles.container}>
+        <View style={styles.adContainer}>
+          <BannerAd
+            unitId={adUnitId}
+            size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
+          />
+        </View>
+
+        <View style={styles.content}>
+          <Animated.View
+            style={[
+              styles.appIconContainer,
+              {transform: [{translateX: shakeAnim}]},
+            ]}>
+            <View style={styles.iconBackground}>
+              {appInfo.icon ? (
+                <Image
+                  source={{uri: appInfo.icon}}
+                  style={styles.appIconImage}
+                />
+              ) : (
+                <Icon
+                  name={appInfo.iconName || 'android'}
+                  size={40}
+                  color="#1E88E5"
+                />
+              )}
+            </View>
+          </Animated.View>
+
+          <Text style={styles.appName}>{appInfo.name} is locked</Text>
+          <Text style={styles.prompt}>Enter your PIN to unlock</Text>
+
+          <Animated.View
+            style={[
+              styles.inputContainer,
+              {transform: [{translateX: shakeAnim}]},
+            ]}>
+            <TextInput
+              value={pin}
+              onChangeText={setPin}
+              secureTextEntry={!showPin}
+              keyboardType="numeric"
+              style={styles.pinInput}
+              maxLength={6}
+              mode="flat"
+              underlineColor="transparent"
+              selectionColor="#1E88E5"
+              theme={{
+                colors: {primary: '#1E88E5', text: '#333', placeholder: '#888'},
+              }}
+              right={
+                <TextInput.Icon
+                  icon={showPin ? 'eye-off' : 'eye'}
+                  onPress={() => setShowPin(!showPin)}
+                  color="#1E88E5"
+                />
+              }
+            />
+          </Animated.View>
+
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+
+          <Button
+            mode="contained"
+            onPress={handleUnlock}
+            style={styles.unlockButton}
+            disabled={pin.length < 4 || isLoading}
+            loading={isLoading}
+            labelStyle={styles.unlockButtonLabel}>
+            Unlock
+          </Button>
+
+          <Button
+            mode="text"
+            onPress={handleForgotPin}
+            style={styles.forgotButton}
+            labelStyle={styles.forgotButtonLabel}>
+            Forgot PIN?
+          </Button>
+        </View>
+
         <BannerAd
           unitId={adUnitId}
           size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
         />
+
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>App Lock - Secure Your Privacy</Text>
+        </View>
       </View>
-
-      <View style={styles.content}>
-        <Animated.View
-          style={[
-            styles.appIconContainer,
-            {transform: [{translateX: shakeAnim}]},
-          ]}>
-          <View style={styles.iconBackground}>
-            <Icon name={appIcon || 'android'} size={40} color="#1E88E5" />
-          </View>
-        </Animated.View>
-
-        <Text style={styles.appName}>{appName || 'App'} is locked</Text>
-        <Text style={styles.prompt}>Enter your PIN to unlock</Text>
-
-        <Animated.View
-          style={[
-            styles.inputContainer,
-            {transform: [{translateX: shakeAnim}]},
-          ]}>
-          <TextInput
-            value={pin}
-            onChangeText={setPin}
-            secureTextEntry={!showPin}
-            keyboardType="numeric"
-            style={styles.pinInput}
-            maxLength={6}
-            mode="flat"
-            underlineColor="transparent"
-            selectionColor="#1E88E5"
-            theme={{
-              colors: {primary: '#1E88E5', text: '#333', placeholder: '#888'},
-            }}
-            right={
-              <TextInput.Icon
-                icon={showPin ? 'eye-off' : 'eye'}
-                onPress={() => setShowPin(!showPin)}
-                color="#1E88E5"
-              />
-            }
-          />
-        </Animated.View>
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        <Button
-          mode="contained"
-          onPress={handleUnlock}
-          style={styles.unlockButton}
-          disabled={pin.length < 4 || isLoading}
-          loading={isLoading}
-          labelStyle={styles.unlockButtonLabel}>
-          Unlock
-        </Button>
-
-        <Button
-          mode="text"
-          onPress={handleForgotPin}
-          style={styles.forgotButton}
-          labelStyle={styles.forgotButtonLabel}>
-          Forgot PIN?
-        </Button>
-      </View>
-
-      <BannerAd
-        unitId={adUnitId}
-        size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
-      />
-
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>App Lock - Secure Your Privacy</Text>
-      </View>
-    </View>
+    </Modal>
   );
 };
 
@@ -219,6 +277,11 @@ const styles = StyleSheet.create({
     shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.1,
     shadowRadius: 8,
+  },
+  appIconImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
   },
   appName: {
     fontSize: 24,

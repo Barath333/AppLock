@@ -1,3 +1,5 @@
+
+
 import React, {useState, useEffect} from 'react';
 import {
   View,
@@ -8,11 +10,14 @@ import {
   Animated,
   Easing,
   Dimensions,
+  Image,
 } from 'react-native';
 import {Searchbar, Appbar, Card} from 'react-native-paper';
 import {useNavigation} from '@react-navigation/native';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import {NativeModules} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const {AppListModule} = NativeModules;
 const {width} = Dimensions.get('window');
 
 const HomeScreen = () => {
@@ -25,6 +30,7 @@ const HomeScreen = () => {
 
   useEffect(() => {
     loadInstalledApps();
+    loadLockedApps();
   }, []);
 
   useEffect(() => {
@@ -39,78 +45,47 @@ const HomeScreen = () => {
     }
   }, [searchQuery, apps]);
 
+  const loadLockedApps = async () => {
+    try {
+      const savedLockedApps = await AsyncStorage.getItem('lockedApps');
+      if (savedLockedApps) {
+        setLockedApps(JSON.parse(savedLockedApps));
+      }
+    } catch (error) {
+      console.error('Error loading locked apps:', error);
+    }
+  };
+
+  const saveLockedApps = async apps => {
+    try {
+      await AsyncStorage.setItem('lockedApps', JSON.stringify(apps));
+    } catch (error) {
+      console.error('Error saving locked apps:', error);
+    }
+  };
+
   const loadInstalledApps = async () => {
     try {
-      const mockApps = [
-        {
-          id: '1',
-          name: 'WhatsApp',
-          packageName: 'com.whatsapp',
-          locked: false,
-          icon: 'whatsapp',
-        },
-        {
-          id: '2',
-          name: 'Facebook',
-          packageName: 'com.facebook.katana',
-          locked: true,
-          icon: 'facebook',
-        },
-        {
-          id: '3',
-          name: 'Instagram',
-          packageName: 'com.instagram.android',
-          locked: true,
-          icon: 'instagram',
-        },
-        {
-          id: '4',
-          name: 'Messenger',
-          packageName: 'com.facebook.orca',
-          locked: false,
-          icon: 'facebook-messenger',
-        },
-        {
-          id: '5',
-          name: 'Gmail',
-          packageName: 'com.google.android.gm',
-          locked: false,
-          icon: 'gmail',
-        },
-        {
-          id: '6',
-          name: 'Photos',
-          packageName: 'com.google.android.apps.photos',
-          locked: false,
-          icon: 'image',
-        },
-        {
-          id: '7',
-          name: 'Chrome',
-          packageName: 'com.android.chrome',
-          locked: false,
-          icon: 'google-chrome',
-        },
-        {
-          id: '8',
-          name: 'Gallery',
-          packageName: 'com.sec.android.gallery3d',
-          locked: true,
-          icon: 'image-album',
-        },
-      ];
+      const installedApps = await AppListModule.getInstalledApps();
 
-      setApps(mockApps);
-      setFilteredApps(mockApps);
+      // Add locked status to each app
+      const appsWithLockStatus = installedApps.map(app => ({
+        ...app,
+        id: app.packageName,
+        locked: lockedApps.some(
+          lockedApp => lockedApp.packageName === app.packageName,
+        ),
+        icon: app.icon ? `data:image/png;base64,${app.icon}` : null,
+      }));
 
-      const locked = mockApps.filter(app => app.locked);
-      setLockedApps(locked);
+      setApps(appsWithLockStatus);
+      setFilteredApps(appsWithLockStatus);
     } catch (error) {
       console.error('Error loading apps:', error);
     }
   };
 
-  const toggleAppLock = appId => {
+  const toggleAppLock = async appId => {
     Animated.sequence([
       Animated.timing(scaleAnim, {
         toValue: 0.95,
@@ -131,19 +106,29 @@ const HomeScreen = () => {
     );
 
     setApps(updatedApps);
+
+    // Update locked apps list
     const locked = updatedApps.filter(app => app.locked);
     setLockedApps(locked);
+
+    // Save to storage
+    saveLockedApps(locked);
   };
 
   const renderAppItem = ({item}) => (
     <Animated.View style={[styles.appItem, {transform: [{scale: scaleAnim}]}]}>
       <View style={styles.appInfo}>
         <View style={styles.appIconContainer}>
-          <Icon name={item.icon} size={24} color="#42A5F5" />
+          {item.icon ? (
+            <Image source={{uri: item.icon}} style={styles.appIcon} />
+          ) : (
+            <View style={styles.placeholderIcon} />
+          )}
         </View>
         <View style={styles.appDetails}>
-          <Text style={styles.appName}>{item.name}</Text>
-          <Text style={styles.packageName}>{item.packageName}</Text>
+          <Text style={styles.appName} numberOfLines={1}>
+            {item.name}
+          </Text>
         </View>
       </View>
       <Switch
@@ -206,6 +191,27 @@ const HomeScreen = () => {
 };
 
 const styles = StyleSheet.create({
+  // ... keep your existing styles but add these new ones:
+  appIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 5,
+  },
+  placeholderIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 5,
+    backgroundColor: '#E3F2FD',
+  },
+  // Update the appIconContainer to remove the background color
+  appIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',

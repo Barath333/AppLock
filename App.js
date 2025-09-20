@@ -4,6 +4,7 @@ import {Provider as PaperProvider, DefaultTheme} from 'react-native-paper';
 import AppNavigator from './src/navigation/AppNavigator';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import SimpleSplashScreen from './src/components/SimpleSplashScreen';
+import LockScreenManager from './src/components/LockScreenManager';
 
 // Custom theme with #1E88E5 as primary color
 const theme = {
@@ -39,7 +40,9 @@ export default function App() {
     <GestureHandlerRootView style={styles.container}>
       <PaperProvider theme={theme}>
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-        <AppNavigator />
+        <LockScreenManager>
+          <AppNavigator />
+        </LockScreenManager>
       </PaperProvider>
     </GestureHandlerRootView>
   );

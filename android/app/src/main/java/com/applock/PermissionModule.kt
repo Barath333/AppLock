@@ -127,4 +127,25 @@ class PermissionModule(reactContext: ReactApplicationContext) : ReactContextBase
             }
         }
     }
+
+    @ReactMethod
+    fun testAccessibilityService(promise: Promise) {
+        try {
+            val accessibilityManager = reactApplicationContext.getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
+            val enabledServices = Settings.Secure.getString(
+                reactApplicationContext.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            )
+            val expectedService = ComponentName(reactApplicationContext, AppAccessibilityService::class.java).flattenToString()
+            val isEnabled = enabledServices?.contains(expectedService) ?: false
+            promise.resolve(isEnabled)
+        } catch (e: Exception) {
+            promise.reject("ACCESSIBILITY_TEST_ERROR", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun checkOverlayPermission(promise: Promise) {
+        promise.resolve(Settings.canDrawOverlays(reactApplicationContext))
+    }
 }
