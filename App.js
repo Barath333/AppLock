@@ -23,6 +23,13 @@ const theme = {
 export default function App() {
   const [isSplashVisible, setIsSplashVisible] = useState(true);
 
+  useEffect(() => {
+    // Clean up any existing listeners when app starts
+    return () => {
+      // Cleanup if needed
+    };
+  }, []);
+
   const handleSplashComplete = () => {
     setIsSplashVisible(false);
   };

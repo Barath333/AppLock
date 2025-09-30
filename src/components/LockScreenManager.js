@@ -3,60 +3,94 @@ import {
   View,
   BackHandler,
   Alert,
-  NativeEventEmitter,
   NativeModules,
   AppState,
   DeviceEventEmitter,
   LogBox,
+  Platform,
+  NativeEventEmitter,
 } from 'react-native';
 import LockScreen from './LockScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const {AppLockModule, PermissionModule} = NativeModules;
-const appLockEventEmitter = new NativeEventEmitter(AppLockModule);
+
+// Create event emitter
+const eventEmitter = new NativeEventEmitter(AppLockModule);
 
 // Ignore specific warnings
 LogBox.ignoreLogs([
+  'new NativeEventEmitter',
   'Non-serializable values were found in the navigation state',
 ]);
+
+const OUR_APP_PACKAGE = 'com.applock';
 
 const LockScreenManager = ({children}) => {
   const [showLockScreen, setShowLockScreen] = useState(false);
   const [currentApp, setCurrentApp] = useState(null);
   const [lockedApps, setLockedApps] = useState([]);
-  const [appState, setAppState] = useState(AppState.currentState);
   const appStateRef = useRef(AppState.currentState);
 
   useEffect(() => {
-    appStateRef.current = appState;
-  }, [appState]);
+    console.log('🔧 LockScreenManager mounted');
 
-  useEffect(() => {
-    console.log('LockScreenManager mounted');
+    // Load initial data
     loadLockedApps();
+    checkAllPermissions();
 
-    const subscription = appLockEventEmitter.addListener(
-      'onAppOpened',
+    // Listen for app locked events from native side using NativeEventEmitter
+    const lockedSubscription = eventEmitter.addListener(
+      'onAppLocked',
       event => {
-        console.log('App opened event received:', event);
-        const {packageName, className} = event;
-
-        // Check if this app is locked
-        const isLocked = lockedApps.some(
-          app => app.packageName === packageName,
+        console.log(
+          '🎯 onAppLocked Event Received:',
+          JSON.stringify(event, null, 2),
         );
 
-        if (isLocked) {
-          const appInfo = lockedApps.find(
-            app => app.packageName === packageName,
-          );
-          console.log('Locked app detected:', appInfo);
+        const {packageName, className, timestamp} = event;
+
+        if (packageName && packageName !== OUR_APP_PACKAGE) {
+          console.log('🚨 Showing Lock Screen for:', packageName);
+
+          const appInfo = {
+            packageName: packageName,
+            className: className,
+            name: getAppName(packageName),
+            icon: null,
+            timestamp: timestamp,
+          };
+
           setCurrentApp(appInfo);
           setShowLockScreen(true);
 
-          // Always try to bring our app to foreground when a locked app is opened
+          // Bring our app to foreground
           setTimeout(() => {
-            NativeModules.AppLockModule.bringToFront();
+            console.log('🚀 Bringing app to front');
+            AppLockModule.bringToFront();
+          }, 100);
+        }
+      },
+    );
+
+    // Also listen via DeviceEventEmitter as backup
+    const deviceEventSubscription = DeviceEventEmitter.addListener(
+      'onAppLocked',
+      event => {
+        console.log('📱 DeviceEvent Received onAppLocked:', event);
+        if (event.packageName && event.packageName !== OUR_APP_PACKAGE) {
+          const appInfo = {
+            packageName: event.packageName,
+            className: event.className,
+            name: getAppName(event.packageName),
+            icon: null,
+            timestamp: event.timestamp,
+          };
+          setCurrentApp(appInfo);
+          setShowLockScreen(true);
+
+          setTimeout(() => {
+            AppLockModule.bringToFront();
           }, 100);
         }
       },
@@ -67,17 +101,18 @@ const LockScreenManager = ({children}) => {
       'change',
       nextAppState => {
         console.log(
-          'App state changed from',
+          '📱 App State Changed:',
           appStateRef.current,
-          'to',
+          '->',
           nextAppState,
         );
-        setAppState(nextAppState);
         appStateRef.current = nextAppState;
 
-        // When app comes to foreground, check if accessibility service is running
         if (nextAppState === 'active') {
+          console.log('🔄 App is active, checking permissions');
           checkAccessibilityService();
+        } else if (nextAppState === 'background') {
+          console.log('📱 App went to background');
         }
       },
     );
@@ -90,6 +125,7 @@ const LockScreenManager = ({children}) => {
       'hardwareBackPress',
       () => {
         if (showLockScreen) {
+          console.log('🔒 Back button blocked - Lock screen active');
           return true; // Prevent default behavior
         }
         return false;
@@ -97,65 +133,130 @@ const LockScreenManager = ({children}) => {
     );
 
     return () => {
-      console.log('LockScreenManager unmounted');
-      subscription.remove();
+      console.log('🧹 LockScreenManager unmounted - Cleaning up');
+      lockedSubscription.remove();
+      deviceEventSubscription.remove();
       appStateSubscription.remove();
       backHandler.remove();
     };
-  }, [lockedApps, showLockScreen]);
+  }, []);
+
+  useEffect(() => {
+    console.log('🔒 Lock Screen State Changed:', showLockScreen);
+    console.log('📱 Current App:', currentApp);
+  }, [showLockScreen, currentApp]);
+
+  const getAppName = packageName => {
+    // Extract app name from package name
+    const parts = packageName.split('.');
+    const lastPart = parts[parts.length - 1];
+    // Capitalize first letter
+    return lastPart.charAt(0).toUpperCase() + lastPart.slice(1);
+  };
+
+  const checkAllPermissions = async () => {
+    try {
+      console.log('🔍 Checking all permissions...');
+
+      const accessibility =
+        await PermissionModule.getAccessibilityServiceStatus();
+      const overlay = await PermissionModule.isOverlayPermissionGranted();
+      const usage = await PermissionModule.isUsageAccessGranted();
+
+      console.log('📋 Permission Status:');
+      console.log('   ♿ Accessibility:', accessibility);
+      console.log('   🪟 Overlay:', overlay);
+      console.log('   📊 Usage Access:', usage);
+
+      if (!accessibility) {
+        console.warn('⚠️ Accessibility service is not enabled');
+      }
+      if (!overlay) {
+        console.warn('⚠️ Overlay permission is not granted');
+      }
+      if (!usage) {
+        console.warn('⚠️ Usage access permission is not granted');
+      }
+    } catch (error) {
+      console.error('❌ Error checking permissions:', error);
+    }
+  };
 
   const checkAccessibilityService = async () => {
     try {
+      console.log('🔍 Checking accessibility service status...');
       const isRunning = await AppLockModule.isAccessibilityServiceRunning();
-      console.log('Accessibility service running:', isRunning);
+      console.log('♿ Accessibility Service Running:', isRunning);
 
       if (!isRunning) {
-        Alert.alert(
-          'Accessibility Service Required',
-          'Please enable the accessibility service for App Lock in Settings > Accessibility to lock apps properly.',
-          [
-            {
-              text: 'Open Settings',
-              onPress: () => PermissionModule.openAccessibilitySettings(),
-            },
-            {
-              text: 'Cancel',
-              style: 'cancel',
-            },
-          ],
-        );
+        console.warn('⚠️ Accessibility service is NOT running');
+        if (!showLockScreen) {
+          Alert.alert(
+            'Accessibility Service Required',
+            'Please enable the accessibility service for App Lock in Settings > Accessibility to lock apps properly.',
+            [
+              {
+                text: 'Open Settings',
+                onPress: () => {
+                  console.log('⚙️ Opening accessibility settings');
+                  PermissionModule.openAccessibilitySettings();
+                },
+              },
+              {
+                text: 'Cancel',
+                style: 'cancel',
+              },
+            ],
+          );
+        }
+      } else {
+        console.log('✅ Accessibility service is running properly');
       }
     } catch (error) {
-      console.error('Error checking accessibility service:', error);
+      console.error('❌ Error checking accessibility service:', error);
     }
   };
 
   const loadLockedApps = async () => {
     try {
+      console.log('📦 Loading locked apps from storage...');
       const savedLockedApps = await AsyncStorage.getItem('lockedApps');
+
       if (savedLockedApps) {
         const apps = JSON.parse(savedLockedApps);
+        console.log('🔒 Loaded Locked Apps:', apps);
         setLockedApps(apps);
-        console.log('Loaded locked apps:', apps);
+
+        // Update native module with package names only
+        const packageNames = Array.isArray(apps)
+          ? apps.map(app => (typeof app === 'object' ? app.packageName : app))
+          : [];
+
+        console.log('📋 Sending to native module:', packageNames);
+        await AppLockModule.setLockedApps(packageNames);
+      } else {
+        console.log('📭 No locked apps found in storage');
+        setLockedApps([]);
       }
     } catch (error) {
-      console.error('Error loading locked apps:', error);
+      console.error('❌ Error loading locked apps:', error);
     }
   };
 
   const handleUnlock = () => {
-    // App unlocked successfully
-    console.log('App unlocked:', currentApp?.name);
+    console.log('✅ App unlocked:', currentApp?.name);
     setShowLockScreen(false);
     setCurrentApp(null);
   };
 
   const handleClose = () => {
+    console.log('🚪 Closing lock screen');
     setShowLockScreen(false);
     setCurrentApp(null);
   };
 
   const handleForgotPin = async () => {
+    console.log('🔑 Forgot PIN flow started');
     Alert.alert(
       'Reset PIN',
       'This will require you to set up a new PIN. All your locked apps will be unlocked.',
@@ -163,19 +264,25 @@ const LockScreenManager = ({children}) => {
         {
           text: 'Cancel',
           style: 'cancel',
+          onPress: () => console.log('❌ PIN reset cancelled'),
         },
         {
           text: 'Reset',
           onPress: async () => {
             try {
+              console.log('🔄 Resetting PIN and locked apps...');
               await AsyncStorage.removeItem('applock_pin');
               await AsyncStorage.removeItem('lockedApps');
               setLockedApps([]);
+              await AppLockModule.setLockedApps([]);
+              setShowLockScreen(false);
+              setCurrentApp(null);
               Alert.alert(
                 'Success',
                 'PIN has been reset. Please set up a new PIN.',
               );
             } catch (error) {
+              console.error('❌ Error resetting PIN:', error);
               Alert.alert('Error', 'Failed to reset PIN');
             }
           },

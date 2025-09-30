@@ -9,6 +9,7 @@ import SettingsScreen from '../screens/SettingsScreen';
 import PremiumUpgradeScreen from '../screens/PremiumUpgradeScreen';
 import PermissionGrantingScreen from '../screens/PermissionGrantingScreen';
 import HomeScreen from '../screens/HomeScreen';
+import DebugScreen from '../screens/DebugScreen';
 
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -33,6 +34,7 @@ function AppNavigator() {
           name="PermissionGranting"
           component={PermissionGrantingScreen}
         />
+        {/* <Stack.Screen name="Debug" component={DebugScreen} /> */}
         <Stack.Screen name="Setup" component={SetupScreen} />
         <Stack.Screen name="Main" component={MainDrawer} />
       </Stack.Navigator>

@@ -14,7 +14,7 @@ class CustomPackage : ReactPackage {
         return listOf(
             PermissionModule(reactContext),
             AppListModule(reactContext),
-            AppLockModule(reactContext) // Add this line
+            AppLockModule(reactContext)
         )
     }
 }
