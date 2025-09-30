@@ -14,6 +14,8 @@ class AppAccessibilityService : AccessibilityService() {
     private var lastPackageName: String? = null
     private val OUR_APP_PACKAGE = "com.applock"
     private val handler = Handler(Looper.getMainLooper())
+    private val temporarilyUnlockedApps = mutableSetOf<String>()
+    private val TEMPORARY_UNLOCK_DURATION = 10000L // 10 seconds
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -47,43 +49,55 @@ class AppAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun handleWindowStateChanged(event: AccessibilityEvent) {
-        val packageName = event.packageName?.toString()
-        val className = event.className?.toString()
+   private fun handleWindowStateChanged(event: AccessibilityEvent) {
+    val packageName = event.packageName?.toString()
+    val className = event.className?.toString()
+    
+    Log.d("AppLockDebug", "🏠 Window State Changed:")
+    Log.d("AppLockDebug", "   📦 Package: $packageName")
+    Log.d("AppLockDebug", "   🏷️ Class: $className")
+    
+    if (packageName != null && packageName != lastPackageName) {
+        lastPackageName = packageName
+        Log.d("AppLockDebug", "🎯 New App Detected: $packageName")
         
-        Log.d("AppLockDebug", "🏠 Window State Changed:")
-        Log.d("AppLockDebug", "   📦 Package: $packageName")
-        Log.d("AppLockDebug", "   🏷️ Class: $className")
-        Log.d("AppLockDebug", "   📝 Text: ${event.text}")
+        // Skip our own app
+        if (packageName == OUR_APP_PACKAGE) {
+            Log.d("AppLockDebug", "⏭️ Skipping our own app")
+            return
+        }
         
-        if (packageName != null && packageName != lastPackageName) {
-            lastPackageName = packageName
-            Log.d("AppLockDebug", "🎯 New App Detected: $packageName")
-            
-            // Skip our own app
-            if (packageName == OUR_APP_PACKAGE) {
-                Log.d("AppLockDebug", "⏭️ Skipping our own app")
-                return
-            }
-            
-            // Skip system/launcher apps
-            if (isSystemApp(packageName)) {
-                Log.d("AppLockDebug", "⏭️ Skipping system app: $packageName")
-                return
-            }
-            
-            // Check if this app is locked
-            val lockedApps = prefs.getStringSet("lockedApps", setOf()) ?: setOf()
-            Log.d("AppLockDebug", "🔒 Checking against ${lockedApps.size} locked apps")
-            
-            if (lockedApps.contains(packageName)) {
-                Log.d("AppLockDebug", "🚨 LOCKED APP DETECTED: $packageName")
-                showLockScreen(packageName, className)
-            } else {
-                Log.d("AppLockDebug", "✅ App $packageName is not locked")
-            }
+        // Skip system/launcher apps
+        if (isSystemApp(packageName)) {
+            Log.d("AppLockDebug", "⏭️ Skipping system app: $packageName")
+            return
+        }
+        
+        // Check if this app is temporarily unlocked (in memory)
+        if (temporarilyUnlockedApps.contains(packageName)) {
+            Log.d("AppLockDebug", "🔓 App is temporarily unlocked (memory): $packageName")
+            return
+        }
+        
+        // Check if this app is temporarily unlocked (in SharedPreferences)
+        val tempUnlockedApps = prefs.getStringSet("tempUnlockedApps", setOf()) ?: setOf()
+        if (tempUnlockedApps.contains(packageName)) {
+            Log.d("AppLockDebug", "🔓 App is temporarily unlocked (SharedPreferences): $packageName")
+            return
+        }
+        
+        // Check if this app is locked
+        val lockedApps = prefs.getStringSet("lockedApps", setOf()) ?: setOf()
+        Log.d("AppLockDebug", "🔒 Checking against ${lockedApps.size} locked apps")
+        
+        if (lockedApps.contains(packageName)) {
+            Log.d("AppLockDebug", "🚨 LOCKED APP DETECTED: $packageName")
+            showLockScreen(packageName, className)
+        } else {
+            Log.d("AppLockDebug", "✅ App $packageName is not locked")
         }
     }
+}
 
     private fun isSystemApp(packageName: String): Boolean {
         return packageName.contains("android") || 
@@ -99,33 +113,8 @@ class AppAccessibilityService : AccessibilityService() {
     private fun showLockScreen(packageName: String, className: String?) {
         Log.d("AppLockDebug", "🚀 Preparing to show lock screen for: $packageName")
         
-        // Try to send event via React Native module first
-        try {
-            val module = getReactNativeModule()
-            if (module != null) {
-                Log.d("AppLockDebug", "📡 Sending event via React Native module")
-                module.sendAppLockedEvent(packageName, className)
-            } else {
-                Log.d("AppLockDebug", "❌ React Native module not available, using intent")
-                startLockScreenActivity(packageName, className)
-            }
-        } catch (e: Exception) {
-            Log.e("AppLockDebug", "❌ Error sending via module: ${e.message}")
-            startLockScreenActivity(packageName, className)
-        }
-        
-        // Also start activity as backup
+        // Start lock screen activity
         startLockScreenActivity(packageName, className)
-    }
-
-    private fun getReactNativeModule(): AppLockModule? {
-        try {
-            // In a real implementation, you'd get this from React Native context
-            // For now, we'll rely on the activity method
-            return null
-        } catch (e: Exception) {
-            return null
-        }
     }
 
     private fun startLockScreenActivity(packageName: String, className: String?) {
@@ -144,27 +133,21 @@ class AppAccessibilityService : AccessibilityService() {
             Log.d("AppLockDebug", "🎬 Starting Lock Screen Activity...")
             startActivity(intent)
             Log.d("AppLockDebug", "✅ Lock Screen Activity Started")
-            
-            // Bring to front multiple times to ensure it shows
-            repeat(3) { attempt ->
-                handler.postDelayed({
-                    try {
-                        Log.d("AppLockDebug", "🔄 Bring to front attempt ${attempt + 1}")
-                        val bringIntent = Intent(applicationContext, MainActivity::class.java).apply {
-                            putExtra("lockedPackage", packageName)
-                            putExtra("isLockScreen", true)
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-                        }
-                        startActivity(bringIntent)
-                    } catch (e: Exception) {
-                        Log.e("AppLockDebug", "❌ Bring to front attempt ${attempt + 1} failed: ${e.message}")
-                    }
-                }, (attempt + 1) * 300L)
-            }
         } catch (e: Exception) {
             Log.e("AppLockDebug", "❌ Failed to start lock screen: ${e.message}", e)
         }
+    }
+
+    // Method to temporarily unlock an app
+    fun temporarilyUnlockApp(packageName: String) {
+        Log.d("AppLockDebug", "🔓 Temporarily unlocking app: $packageName")
+        temporarilyUnlockedApps.add(packageName)
+        
+        // Remove from temporary unlock after duration
+        handler.postDelayed({
+            temporarilyUnlockedApps.remove(packageName)
+            Log.d("AppLockDebug", "⏰ Temporary unlock expired for: $packageName")
+        }, TEMPORARY_UNLOCK_DURATION)
     }
 
     private fun getEventTypeName(eventType: Int): String {

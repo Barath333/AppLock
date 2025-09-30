@@ -13,7 +13,7 @@ import {
   Alert,
 } from 'react-native';
 import {Searchbar, Appbar, Card} from 'react-native-paper';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import {NativeModules} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -32,24 +32,23 @@ const HomeScreen = () => {
   const [filteredApps, setFilteredApps] = useState([]);
   const [lockedApps, setLockedApps] = useState(new Set());
   const [scaleAnim] = useState(new Animated.Value(1));
+  const [refreshing, setRefreshing] = useState(false);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('🏠 HomeScreen focused - refreshing data');
+      loadLockedApps();
+      loadInstalledApps();
+    }, []),
+  );
 
   useEffect(() => {
     console.log('🏠 HomeScreen mounted');
     loadInstalledApps();
     loadLockedApps();
 
-    // Add required listeners
-    if (AppLockModule && typeof AppLockModule.addListener === 'function') {
-      AppLockModule.addListener('onAppOpened');
-    }
-
     return () => {
-      if (
-        AppLockModule &&
-        typeof AppLockModule.removeListeners === 'function'
-      ) {
-        AppLockModule.removeListeners(1);
-      }
+      console.log('🏠 HomeScreen unmounted');
     };
   }, []);
 
@@ -78,12 +77,10 @@ const HomeScreen = () => {
           console.log('📋 Raw locked apps from storage:', lockedAppsArray);
         } catch (e) {
           console.error('❌ Error parsing locked apps:', e);
-          // If parsing fails, reset the storage
           await AsyncStorage.removeItem('lockedApps');
           lockedAppsArray = [];
         }
 
-        // Handle both formats and filter out our own app
         if (Array.isArray(lockedAppsArray) && lockedAppsArray.length > 0) {
           lockedAppsArray.forEach(item => {
             let packageName;
@@ -100,13 +97,20 @@ const HomeScreen = () => {
         }
       }
 
-      console.log(
-        '🔒 Final locked apps set (excluding our app):',
-        Array.from(lockedSet),
-      );
+      console.log('🔒 Final locked apps set:', Array.from(lockedSet));
       setLockedApps(lockedSet);
 
-      // Update native module with package names only
+      // Update apps with correct lock status
+      if (apps.length > 0) {
+        const updatedApps = apps.map(app => ({
+          ...app,
+          locked: lockedSet.has(app.packageName),
+        }));
+        setApps(updatedApps);
+        setFilteredApps(updatedApps);
+      }
+
+      // Update native module
       const packageNamesArray = Array.from(lockedSet);
       if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
         await AppLockModule.setLockedApps(packageNamesArray);
@@ -118,16 +122,18 @@ const HomeScreen = () => {
 
   const saveLockedApps = async appsSet => {
     try {
-      // Filter out our own app before saving
       const filteredApps = Array.from(appsSet).filter(
         pkg => pkg !== OUR_APP_PACKAGE,
       );
-      console.log('💾 Saving locked apps (filtered):', filteredApps);
+      console.log('💾 Saving locked apps:', filteredApps);
 
       await AsyncStorage.setItem('lockedApps', JSON.stringify(filteredApps));
       if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
         await AppLockModule.setLockedApps(filteredApps);
       }
+
+      // Update local state immediately
+      setLockedApps(new Set(filteredApps));
     } catch (error) {
       console.error('❌ Error saving locked apps:', error);
     }
@@ -139,14 +145,29 @@ const HomeScreen = () => {
       const installedApps = await AppListModule.getInstalledApps();
       console.log(`📱 Loaded ${installedApps.length} apps`);
 
-      // Filter out our own app and system apps, add lock status
+      // Get current locked apps to set correct initial state
+      const currentLockedApps = await AsyncStorage.getItem('lockedApps');
+      const lockedSet = new Set();
+
+      if (currentLockedApps) {
+        try {
+          const lockedArray = JSON.parse(currentLockedApps);
+          lockedArray.forEach(item => {
+            const pkg = typeof item === 'string' ? item : item.packageName;
+            if (pkg && pkg !== OUR_APP_PACKAGE) {
+              lockedSet.add(pkg);
+            }
+          });
+        } catch (e) {
+          console.error('Error parsing locked apps:', e);
+        }
+      }
+
       const appsWithLockStatus = installedApps
         .filter(app => {
-          // Don't show our own app in the list
           if (app.packageName === OUR_APP_PACKAGE) {
             return false;
           }
-          // Filter out some common system apps for better testing
           const systemApps = [
             'android',
             'com.android',
@@ -163,20 +184,20 @@ const HomeScreen = () => {
         .map(app => ({
           ...app,
           id: app.packageName,
-          locked: lockedApps.has(app.packageName),
+          locked: lockedSet.has(app.packageName),
           icon: app.icon ? `data:image/png;base64,${app.icon}` : null,
         }));
 
-      console.log(`📱 Showing ${appsWithLockStatus.length} apps (filtered)`);
+      console.log(`📱 Showing ${appsWithLockStatus.length} apps`);
       setApps(appsWithLockStatus);
       setFilteredApps(appsWithLockStatus);
+      setLockedApps(lockedSet);
     } catch (error) {
       console.error('❌ Error loading apps:', error);
     }
   };
 
   const toggleAppLock = async (appId, appPackageName, appName) => {
-    // Prevent locking our own app
     if (appPackageName === OUR_APP_PACKAGE) {
       Alert.alert(
         'Cannot Lock',
@@ -203,8 +224,9 @@ const HomeScreen = () => {
     ]).start();
 
     const newLockedApps = new Set(lockedApps);
+    const isCurrentlyLocked = newLockedApps.has(appPackageName);
 
-    if (newLockedApps.has(appPackageName)) {
+    if (isCurrentlyLocked) {
       newLockedApps.delete(appPackageName);
       console.log(`🔓 Unlocked: ${appPackageName}`);
     } else {
@@ -212,16 +234,17 @@ const HomeScreen = () => {
       console.log(`🔒 Locked: ${appPackageName}`);
     }
 
-    setLockedApps(newLockedApps);
-
+    // Update UI immediately
     const updatedApps = apps.map(app =>
       app.id === appId
         ? {...app, locked: newLockedApps.has(app.packageName)}
         : app,
     );
     setApps(updatedApps);
+    setLockedApps(newLockedApps);
 
-    saveLockedApps(newLockedApps);
+    // Save to storage
+    await saveLockedApps(newLockedApps);
   };
 
   const renderAppItem = ({item}) => (
@@ -241,6 +264,7 @@ const HomeScreen = () => {
           <Text style={styles.packageName} numberOfLines={1}>
             {item.packageName}
           </Text>
+          {item.locked && <Text style={styles.lockedBadge}>🔒 Locked</Text>}
         </View>
       </View>
       <Switch
@@ -265,6 +289,15 @@ const HomeScreen = () => {
           onPress={() => {
             console.log('⚙️ Settings button pressed');
             navigation.navigate('Settings');
+          }}
+          color="#42A5F5"
+        />
+        <Appbar.Action
+          icon="refresh"
+          onPress={() => {
+            console.log('🔄 Refresh button pressed');
+            loadInstalledApps();
+            loadLockedApps();
           }}
           color="#42A5F5"
         />
@@ -463,6 +496,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#888',
     marginTop: 2,
+  },
+  lockedBadge: {
+    fontSize: 10,
+    color: '#42A5F5',
+    marginTop: 4,
+    fontWeight: '600',
   },
   emptyContainer: {
     flex: 1,

@@ -41,14 +41,30 @@ const SetupScreen = () => {
     }
 
     try {
+      console.log('💾 Saving PIN to Keychain...');
       // Securely store the PIN using Keychain
-      await Keychain.setGenericPassword('applock_pin', pin, {
+      const result = await Keychain.setGenericPassword('applock_user', pin, {
         service: 'applock_service',
         accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
       });
-      navigation.navigate('Main', {screen: 'Home'});
+
+      console.log('✅ PIN saved successfully:', result);
+
+      // Verify the PIN was saved
+      const credentials = await Keychain.getGenericPassword({
+        service: 'applock_service',
+      });
+
+      console.log('🔑 Verified stored PIN:', !!credentials);
+
+      if (credentials && credentials.password === pin) {
+        navigation.navigate('Main', {screen: 'Home'});
+      } else {
+        Alert.alert('Error', 'Failed to verify PIN storage. Please try again.');
+      }
     } catch (error) {
-      Alert.alert('Error', 'Failed to save PIN');
+      console.error('❌ Error saving PIN:', error);
+      Alert.alert('Error', 'Failed to save PIN. Please try again.');
     }
   };
 
@@ -69,7 +85,7 @@ const SetupScreen = () => {
         </Text>
 
         <TextInput
-          label="Enter PIN"
+          label="Enter PIN (4-6 digits)"
           value={pin}
           onChangeText={setPin}
           secureTextEntry={!showPin}

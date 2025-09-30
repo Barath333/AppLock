@@ -10,17 +10,15 @@ import {
   Modal,
   AppState,
   BackHandler,
+  Alert,
+  NativeModules,
 } from 'react-native';
 import {TextInput, Button} from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import * as Keychain from 'react-native-keychain';
 import {BannerAd, BannerAdSize, TestIds} from 'react-native-google-mobile-ads';
-import {NativeEventEmitter, NativeModules} from 'react-native';
 
-const {AppAccessibilityService} = NativeModules;
-const accessibilityEventEmitter = new NativeEventEmitter(
-  AppAccessibilityService,
-);
+const {AppLockModule} = NativeModules;
 
 const adUnitId = __DEV__
   ? TestIds.ADAPTIVE_BANNER
@@ -28,7 +26,7 @@ const adUnitId = __DEV__
 
 const {width, height} = Dimensions.get('window');
 
-const LockScreen = ({visible, appInfo, onUnlock, onClose}) => {
+const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
   const [error, setError] = useState('');
@@ -39,22 +37,70 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose}) => {
     if (visible) {
       setPin('');
       setError('');
+      setIsLoading(false);
+      // Debug: Check if launchApp method exists
+      console.log('🔍 AppLockModule methods:', Object.keys(AppLockModule));
+      console.log(
+        '🔍 launchApp method exists:',
+        typeof AppLockModule.launchApp === 'function',
+      );
     }
   }, [visible, appInfo]);
 
   const handleUnlock = async () => {
+    if (pin.length < 4) {
+      setError('PIN must be at least 4 digits');
+      return;
+    }
+
     setIsLoading(true);
+    setError('');
+
     try {
+      console.log('🔑 Verifying PIN...');
       const credentials = await Keychain.getGenericPassword({
         service: 'applock_service',
       });
 
+      console.log('📋 PIN verification result:', {
+        hasCredentials: !!credentials,
+        storedPIN: credentials ? credentials.password : 'none',
+        enteredPIN: pin,
+      });
+
       if (credentials && credentials.password === pin) {
+        console.log('✅ PIN verified successfully');
+
+        // Try to launch the original app
+        if (appInfo?.packageName) {
+          console.log(
+            '🚀 Attempting to launch original app:',
+            appInfo.packageName,
+          );
+
+          // Check if launchApp method exists
+          if (typeof AppLockModule.launchApp === 'function') {
+            console.log('✅ launchApp method is available');
+            AppLockModule.launchApp(appInfo.packageName);
+          } else {
+            console.log(
+              '❌ launchApp method not available, using closeLockScreen',
+            );
+            // Fallback: just close the lock screen
+            AppLockModule.closeLockScreen();
+          }
+        } else {
+          console.log('❌ No package name available, using closeLockScreen');
+          AppLockModule.closeLockScreen();
+        }
+
+        // Call onUnlock to update state
         onUnlock();
-        onClose();
       } else {
+        console.log('❌ Invalid PIN');
         setError('Invalid PIN');
         setPin('');
+        // Shake animation for wrong PIN
         Animated.sequence([
           Animated.timing(shakeAnim, {
             toValue: 10,
@@ -79,46 +125,58 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose}) => {
         ]).start();
       }
     } catch (error) {
-      setError('Authentication error');
-      console.error('Keychain error:', error);
+      console.error('🔑 Keychain error:', error);
+      setError('Authentication error. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // In your LockScreen.js, update the handleForgotPin function:
   const handleForgotPin = async () => {
-    if (onForgotPin) {
-      onForgotPin();
-    } else {
-      Alert.alert(
-        'Reset PIN',
-        'This will require you to set up a new PIN. All your locked apps will be unlocked.',
-        [
-          {
-            text: 'Cancel',
-            style: 'cancel',
+    Alert.alert(
+      'Reset PIN',
+      'This will reset your PIN and unlock all apps. You will need to set up a new PIN.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Reset',
+          onPress: async () => {
+            try {
+              // Reset Keychain
+              await Keychain.resetGenericPassword({
+                service: 'applock_service',
+              });
+
+              // Clear locked apps
+              await AppLockModule.setLockedApps([]);
+
+              Alert.alert(
+                'Success',
+                'PIN has been reset. All apps are now unlocked.',
+                [
+                  {
+                    text: 'OK',
+                    onPress: () => {
+                      onClose();
+                      if (onForgotPin) {
+                        onForgotPin();
+                      }
+                    },
+                  },
+                ],
+              );
+            } catch (error) {
+              console.error('Error resetting PIN:', error);
+              Alert.alert('Error', 'Failed to reset PIN');
+            }
           },
-          {
-            text: 'Reset',
-            onPress: async () => {
-              try {
-                await Keychain.resetGenericPassword({
-                  service: 'applock_service',
-                });
-                Alert.alert(
-                  'Success',
-                  'PIN has been reset. Please set up a new PIN.',
-                );
-              } catch (error) {
-                Alert.alert('Error', 'Failed to reset PIN');
-              }
-            },
-            style: 'destructive',
-          },
-        ],
-      );
-    }
+          style: 'destructive',
+        },
+      ],
+    );
   };
 
   // Prevent back button from closing the lock screen
@@ -140,9 +198,7 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose}) => {
       hardwareAccelerated
       statusBarTranslucent
       onRequestClose={() => {
-        // Handle back button on Android
         if (visible) {
-          // Do nothing when lock screen is visible
           return;
         }
       }}>
@@ -186,7 +242,10 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose}) => {
             ]}>
             <TextInput
               value={pin}
-              onChangeText={setPin}
+              onChangeText={text => {
+                setPin(text);
+                setError(''); // Clear error when user types
+              }}
               secureTextEntry={!showPin}
               keyboardType="numeric"
               style={styles.pinInput}
@@ -308,6 +367,7 @@ const styles = StyleSheet.create({
     color: '#FF3B30',
     marginBottom: 20,
     fontSize: 14,
+    textAlign: 'center',
   },
   unlockButton: {
     marginBottom: 15,

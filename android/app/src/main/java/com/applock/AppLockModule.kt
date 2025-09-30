@@ -2,6 +2,9 @@ package com.applock
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
@@ -45,11 +48,89 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
     }
 
     @ReactMethod
+    fun launchApp(packageName: String) {
+        try {
+            Log.d("AppLockModule", "🚀 Launching original app: $packageName")
+            
+            // Temporarily unlock the app in accessibility service
+            temporarilyUnlockApp(packageName)
+            
+            val activity = currentActivity
+            
+            Handler(Looper.getMainLooper()).post {
+                try {
+                    // Get the launch intent for the original app
+                    val launchIntent = reactContext.packageManager.getLaunchIntentForPackage(packageName)
+                    if (launchIntent != null) {
+                        // Use standard flags for launching app
+                        launchIntent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                        
+                        // Start the original app
+                        reactContext.startActivity(launchIntent)
+                        Log.d("AppLockModule", "✅ Original app launched: $packageName")
+                        
+                        // Move our app to background
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            moveTaskToBack(activity)
+                        }, 500)
+                    } else {
+                        Log.e("AppLockModule", "❌ No launch intent found for: $packageName")
+                        // Fallback: move to background
+                        moveTaskToBack(activity)
+                    }
+                } catch (e: Exception) {
+                    Log.e("AppLockModule", "❌ Error launching app: ${e.message}", e)
+                    // Fallback: move to background
+                    moveTaskToBack(activity)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("AppLockModule", "❌ Error in launchApp: ${e.message}", e)
+        }
+    }
+
+    private fun temporarilyUnlockApp(packageName: String) {
+        try {
+            // Store in SharedPreferences for accessibility service
+            val prefs = reactContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            val editor = prefs.edit()
+            val tempUnlockedApps = prefs.getStringSet("tempUnlockedApps", mutableSetOf()) ?: mutableSetOf()
+            tempUnlockedApps.add(packageName)
+            editor.putStringSet("tempUnlockedApps", tempUnlockedApps)
+            editor.apply()
+            Log.d("AppLockModule", "🔓 Temporarily unlocked app in SharedPreferences: $packageName")
+            
+            // Remove after 10 seconds
+            Handler(Looper.getMainLooper()).postDelayed({
+                val updatedPrefs = reactContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+                val updatedEditor = updatedPrefs.edit()
+                val updatedTempUnlockedApps = updatedPrefs.getStringSet("tempUnlockedApps", mutableSetOf()) ?: mutableSetOf()
+                updatedTempUnlockedApps.remove(packageName)
+                updatedEditor.putStringSet("tempUnlockedApps", updatedTempUnlockedApps)
+                updatedEditor.apply()
+                Log.d("AppLockModule", "⏰ Temporary unlock expired for: $packageName")
+            }, 10000)
+        } catch (e: Exception) {
+            Log.e("AppLockModule", "❌ Error temporarily unlocking app: ${e.message}")
+        }
+    }
+
+    private fun moveTaskToBack(activity: android.app.Activity?) {
+        try {
+            activity?.moveTaskToBack(true)
+            Log.d("AppLockModule", "📱 App moved to background")
+        } catch (e: Exception) {
+            Log.e("AppLockModule", "❌ Error moving app to background: ${e.message}")
+            activity?.finish()
+        }
+    }
+
+    @ReactMethod
     fun closeLockScreen() {
         try {
             val activity = currentActivity
             activity?.runOnUiThread {
-                activity.finish()
+                moveTaskToBack(activity)
             }
             Log.d("AppLockModule", "✅ Lock screen closed")
         } catch (e: Exception) {

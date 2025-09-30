@@ -14,6 +14,7 @@ import com.facebook.react.bridge.Arguments
 import com.facebook.react.modules.core.DeviceEventManagerModule
 
 class MainActivity : ReactActivity() {
+    private var isLockScreenMode = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,22 +37,40 @@ class MainActivity : ReactActivity() {
         handleLockedIntent(intent)
     }
 
+    override fun onPause() {
+        super.onPause()
+        Log.d("AppLockDebug", "⏸️ MainActivity onPause")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Log.d("AppLockDebug", "🛑 MainActivity onStop")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d("AppLockDebug", "💀 MainActivity onDestroy")
+    }
+
     private fun handleLockedIntent(intent: Intent?) {
-        intent?.let {
-            Log.d("AppLockDebug", "📨 Handling Intent:")
-            Log.d("AppLockDebug", "   Action: ${it.action}")
-            Log.d("AppLockDebug", "   Extras: ${it.extras?.keySet()}")
-            
-            val isLockScreen = it.getBooleanExtra("isLockScreen", false)
-            val lockedPackage = it.getStringExtra("lockedPackage")
-            
-            if (isLockScreen && lockedPackage != null) {
-                Log.d("AppLockDebug", "🎯 Lock Screen Mode Activated for: $lockedPackage")
-                setupAsLockScreen()
-                sendAppLockedEvent(lockedPackage, it.getStringExtra("lockedClass"))
-            } else {
-                Log.d("AppLockDebug", "📭 Regular App Mode")
-            }
+        if (intent == null) return
+        
+        Log.d("AppLockDebug", "📨 Handling Intent:")
+        Log.d("AppLockDebug", "   Action: ${intent.action}")
+        Log.d("AppLockDebug", "   Extras: ${intent.extras?.keySet()}")
+        
+        val isLockScreen = intent.getBooleanExtra("isLockScreen", false)
+        val lockedPackage = intent.getStringExtra("lockedPackage")
+        
+        if (isLockScreen && lockedPackage != null) {
+            Log.d("AppLockDebug", "🎯 Lock Screen Mode Activated for: $lockedPackage")
+            isLockScreenMode = true
+            setupAsLockScreen()
+            sendAppLockedEvent(lockedPackage, intent.getStringExtra("lockedClass"))
+        } else {
+            Log.d("AppLockDebug", "📭 Regular App Mode")
+            isLockScreenMode = false
+            clearLockScreenFlags()
         }
     }
 
@@ -75,6 +94,21 @@ class MainActivity : ReactActivity() {
             
         } catch (e: Exception) {
             Log.e("AppLockDebug", "❌ Error setting up lock screen: ${e.message}", e)
+        }
+    }
+
+    private fun clearLockScreenFlags() {
+        try {
+            Log.d("AppLockDebug", "🧹 Clearing lock screen flags")
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
+            window.clearFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD)
+            window.clearFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+            window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
+            window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+        } catch (e: Exception) {
+            Log.e("AppLockDebug", "❌ Error clearing lock screen flags: ${e.message}")
         }
     }
 
@@ -123,7 +157,7 @@ class MainActivity : ReactActivity() {
 
     override fun onBackPressed() {
         // Check if we're in lock screen mode
-        if (intent.getBooleanExtra("isLockScreen", false)) {
+        if (isLockScreenMode) {
             Log.d("AppLockDebug", "🔒 Back button pressed in lock screen - Ignoring")
             // Don't call super to prevent back button from working
             return

@@ -30,6 +30,7 @@ const LockScreenManager = ({children}) => {
   const [showLockScreen, setShowLockScreen] = useState(false);
   const [currentApp, setCurrentApp] = useState(null);
   const [lockedApps, setLockedApps] = useState([]);
+  const [isUnlocking, setIsUnlocking] = useState(false);
   const appStateRef = useRef(AppState.currentState);
 
   useEffect(() => {
@@ -43,6 +44,12 @@ const LockScreenManager = ({children}) => {
     const lockedSubscription = eventEmitter.addListener(
       'onAppLocked',
       event => {
+        // Prevent showing lock screen if we're currently in the process of unlocking
+        if (isUnlocking) {
+          console.log('⏳ Currently unlocking, ignoring lock event');
+          return;
+        }
+
         console.log(
           '🎯 onAppLocked Event Received:',
           JSON.stringify(event, null, 2),
@@ -77,6 +84,12 @@ const LockScreenManager = ({children}) => {
     const deviceEventSubscription = DeviceEventEmitter.addListener(
       'onAppLocked',
       event => {
+        // Prevent showing lock screen if we're currently in the process of unlocking
+        if (isUnlocking) {
+          console.log('⏳ Currently unlocking, ignoring lock event');
+          return;
+        }
+
         console.log('📱 DeviceEvent Received onAppLocked:', event);
         if (event.packageName && event.packageName !== OUR_APP_PACKAGE) {
           const appInfo = {
@@ -106,13 +119,18 @@ const LockScreenManager = ({children}) => {
           '->',
           nextAppState,
         );
+
+        // Reset unlocking state when app goes to background
+        if (nextAppState === 'background') {
+          console.log('📱 App went to background, resetting unlock state');
+          setIsUnlocking(false);
+        }
+
         appStateRef.current = nextAppState;
 
         if (nextAppState === 'active') {
           console.log('🔄 App is active, checking permissions');
           checkAccessibilityService();
-        } else if (nextAppState === 'background') {
-          console.log('📱 App went to background');
         }
       },
     );
@@ -139,12 +157,13 @@ const LockScreenManager = ({children}) => {
       appStateSubscription.remove();
       backHandler.remove();
     };
-  }, []);
+  }, [isUnlocking]);
 
   useEffect(() => {
     console.log('🔒 Lock Screen State Changed:', showLockScreen);
     console.log('📱 Current App:', currentApp);
-  }, [showLockScreen, currentApp]);
+    console.log('🔓 Unlocking State:', isUnlocking);
+  }, [showLockScreen, currentApp, isUnlocking]);
 
   const getAppName = packageName => {
     // Extract app name from package name
@@ -242,9 +261,26 @@ const LockScreenManager = ({children}) => {
       console.error('❌ Error loading locked apps:', error);
     }
   };
-
   const handleUnlock = () => {
     console.log('✅ App unlocked:', currentApp?.name);
+
+    // Launch the original app instead of just closing
+    if (currentApp?.packageName) {
+      console.log('🚀 Launching original app:', currentApp.packageName);
+
+      // Check if launchApp method exists
+      if (AppLockModule && typeof AppLockModule.launchApp === 'function') {
+        AppLockModule.launchApp(currentApp.packageName);
+      } else {
+        console.log('❌ launchApp not available, using closeLockScreen');
+        AppLockModule.closeLockScreen();
+      }
+    } else {
+      console.log('❌ No package name, using closeLockScreen');
+      AppLockModule.closeLockScreen();
+    }
+
+    // Clear the state immediately
     setShowLockScreen(false);
     setCurrentApp(null);
   };
@@ -253,6 +289,7 @@ const LockScreenManager = ({children}) => {
     console.log('🚪 Closing lock screen');
     setShowLockScreen(false);
     setCurrentApp(null);
+    setIsUnlocking(false);
   };
 
   const handleForgotPin = async () => {
@@ -277,6 +314,7 @@ const LockScreenManager = ({children}) => {
               await AppLockModule.setLockedApps([]);
               setShowLockScreen(false);
               setCurrentApp(null);
+              setIsUnlocking(false);
               Alert.alert(
                 'Success',
                 'PIN has been reset. Please set up a new PIN.',
