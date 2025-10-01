@@ -13,6 +13,7 @@ import {Button, Card} from 'react-native-paper';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {NativeModules} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const {PermissionModule} = NativeModules;
 
@@ -128,16 +129,22 @@ const PermissionGrantingScreen = () => {
     }
   };
 
-  const arePermissionsGranted = () => {
-    // if (permissions.accessibility && permissions.overlay && permissions.usage) {
-    //   navigation.navigate('Setup');
-    // } else {
-    //   Alert.alert(
-    //     'Permissions Required',
-    //     'Please grant all required permissions to continue using the app.',
-    //   );
-    // }
-    navigation.navigate('Setup');
+  const arePermissionsGranted = async () => {
+    try {
+      // Check if setup is already completed
+      const setupCompleted = await AsyncStorage.getItem('setupCompleted');
+
+      if (setupCompleted === 'true') {
+        console.log('✅ Setup already completed, going to main app');
+        navigation.navigate('Main');
+      } else {
+        console.log('🔄 Setup not completed, going to setup screen');
+        navigation.navigate('Setup');
+      }
+    } catch (error) {
+      console.error('❌ Error checking setup status:', error);
+      navigation.navigate('Setup');
+    }
   };
 
   const getButtonLabel = permissionName => {

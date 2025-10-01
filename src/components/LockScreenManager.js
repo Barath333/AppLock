@@ -32,6 +32,7 @@ const LockScreenManager = ({children}) => {
   const [lockedApps, setLockedApps] = useState([]);
   const [isUnlocking, setIsUnlocking] = useState(false);
   const appStateRef = useRef(AppState.currentState);
+  const isInitialMount = useRef(true);
 
   useEffect(() => {
     console.log('🔧 LockScreenManager mounted');
@@ -71,11 +72,9 @@ const LockScreenManager = ({children}) => {
           setCurrentApp(appInfo);
           setShowLockScreen(true);
 
-          // Bring our app to foreground
-          setTimeout(() => {
-            console.log('🚀 Bringing app to front');
-            AppLockModule.bringToFront();
-          }, 100);
+          // Bring our app to foreground immediately
+          console.log('🚀 Bringing app to front immediately');
+          AppLockModule.bringToFront();
         }
       },
     );
@@ -102,9 +101,8 @@ const LockScreenManager = ({children}) => {
           setCurrentApp(appInfo);
           setShowLockScreen(true);
 
-          setTimeout(() => {
-            AppLockModule.bringToFront();
-          }, 100);
+          // Bring to front immediately
+          AppLockModule.bringToFront();
         }
       },
     );
@@ -261,8 +259,10 @@ const LockScreenManager = ({children}) => {
       console.error('❌ Error loading locked apps:', error);
     }
   };
+
   const handleUnlock = () => {
     console.log('✅ App unlocked:', currentApp?.name);
+    setIsUnlocking(true);
 
     // Launch the original app instead of just closing
     if (currentApp?.packageName) {
@@ -283,6 +283,11 @@ const LockScreenManager = ({children}) => {
     // Clear the state immediately
     setShowLockScreen(false);
     setCurrentApp(null);
+
+    // Reset unlocking state after a delay
+    setTimeout(() => {
+      setIsUnlocking(false);
+    }, 1000);
   };
 
   const handleClose = () => {
@@ -310,6 +315,7 @@ const LockScreenManager = ({children}) => {
               console.log('🔄 Resetting PIN and locked apps...');
               await AsyncStorage.removeItem('applock_pin');
               await AsyncStorage.removeItem('lockedApps');
+              await AsyncStorage.removeItem('setupCompleted'); // Clear setup flag
               setLockedApps([]);
               await AppLockModule.setLockedApps([]);
               setShowLockScreen(false);

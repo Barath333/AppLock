@@ -15,11 +15,16 @@ import com.facebook.react.modules.core.DeviceEventManagerModule
 
 class MainActivity : ReactActivity() {
     private var isLockScreenMode = false
+    private var shouldShowLockScreen = false
+    private var lockedPackageName: String? = null
+    private var lockedClassName: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d("AppLockDebug", "🏠 MainActivity onCreate")
         Log.d("AppLockDebug", "📦 Package: $packageName")
+        
+        // Handle intent immediately
         handleLockedIntent(intent)
     }
 
@@ -33,23 +38,13 @@ class MainActivity : ReactActivity() {
     override fun onResume() {
         super.onResume()
         Log.d("AppLockDebug", "🔄 MainActivity onResume")
-        // Re-check intent in case we missed it
-        handleLockedIntent(intent)
-    }
-
-    override fun onPause() {
-        super.onPause()
-        Log.d("AppLockDebug", "⏸️ MainActivity onPause")
-    }
-
-    override fun onStop() {
-        super.onStop()
-        Log.d("AppLockDebug", "🛑 MainActivity onStop")
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        Log.d("AppLockDebug", "💀 MainActivity onDestroy")
+        
+        // If we're in lock screen mode and React is ready, send the event
+        if (shouldShowLockScreen && lockedPackageName != null) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                sendAppLockedEvent(lockedPackageName!!, lockedClassName)
+            }, 100)
+        }
     }
 
     private fun handleLockedIntent(intent: Intent?) {
@@ -65,11 +60,20 @@ class MainActivity : ReactActivity() {
         if (isLockScreen && lockedPackage != null) {
             Log.d("AppLockDebug", "🎯 Lock Screen Mode Activated for: $lockedPackage")
             isLockScreenMode = true
+            shouldShowLockScreen = true
+            lockedPackageName = lockedPackage
+            lockedClassName = intent.getStringExtra("lockedClass")
+            
             setupAsLockScreen()
-            sendAppLockedEvent(lockedPackage, intent.getStringExtra("lockedClass"))
+            
+            // Don't send event immediately - wait for React to be ready
+            Log.d("AppLockDebug", "⏳ Waiting for React to be ready before sending lock event")
         } else {
             Log.d("AppLockDebug", "📭 Regular App Mode")
             isLockScreenMode = false
+            shouldShowLockScreen = false
+            lockedPackageName = null
+            lockedClassName = null
             clearLockScreenFlags()
         }
     }
@@ -114,7 +118,7 @@ class MainActivity : ReactActivity() {
 
     private fun sendAppLockedEvent(packageName: String, className: String?) {
         try {
-            Log.d("AppLockDebug", "📤 Sending App Locked Event to React Native")
+            Log.d("AppLockDebug", "📤 Sending App Locked Event to React Native: $packageName")
             
             val params = Bundle().apply {
                 putString("packageName", packageName)
@@ -123,7 +127,7 @@ class MainActivity : ReactActivity() {
             }
             
             // Use handler to ensure this runs on UI thread
-            Handler(Looper.getMainLooper()).postDelayed({
+            Handler(Looper.getMainLooper()).post {
                 try {
                     if (reactInstanceManager != null && 
                         reactInstanceManager.currentReactContext != null) {
@@ -134,21 +138,25 @@ class MainActivity : ReactActivity() {
                             ?.emit("onAppLocked", Arguments.fromBundle(params))
                             
                         Log.d("AppLockDebug", "✅ App Locked Event Sent Successfully")
+                        shouldShowLockScreen = false
                     } else {
                         Log.e("AppLockDebug", "❌ React Context is null, cannot send event")
                         // Retry after a delay
                         Handler(Looper.getMainLooper()).postDelayed({
-                            reactInstanceManager
-                                ?.currentReactContext
-                                ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-                                ?.emit("onAppLocked", Arguments.fromBundle(params))
-                            Log.d("AppLockDebug", "✅ App Locked Event Sent on Retry")
-                        }, 1000)
+                            if (reactInstanceManager?.currentReactContext != null) {
+                                reactInstanceManager
+                                    .currentReactContext
+                                    ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                                    ?.emit("onAppLocked", Arguments.fromBundle(params))
+                                Log.d("AppLockDebug", "✅ App Locked Event Sent on Retry")
+                                shouldShowLockScreen = false
+                            }
+                        }, 500)
                     }
                 } catch (e: Exception) {
                     Log.e("AppLockDebug", "❌ Error sending locked event: ${e.message}", e)
                 }
-            }, 500) // Small delay to ensure React is ready
+            }
             
         } catch (e: Exception) {
             Log.e("AppLockDebug", "❌ Error in sendAppLockedEvent: ${e.message}", e)

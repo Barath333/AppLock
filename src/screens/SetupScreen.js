@@ -4,6 +4,7 @@ import {Button, TextInput} from 'react-native-paper';
 import {useNavigation} from '@react-navigation/native';
 import * as Keychain from 'react-native-keychain';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SetupScreen = () => {
   const navigation = useNavigation();
@@ -49,6 +50,10 @@ const SetupScreen = () => {
       });
 
       console.log('✅ PIN saved successfully:', result);
+
+      // Mark setup as completed
+      await AsyncStorage.setItem('setupCompleted', 'true');
+      console.log('✅ Setup marked as completed');
 
       // Verify the PIN was saved
       const credentials = await Keychain.getGenericPassword({
