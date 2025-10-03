@@ -132,54 +132,117 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
     }
   };
 
-  const handleForgotPin = async () => {
-    Alert.alert(
-      'Reset PIN',
-      'This will reset your PIN and unlock all apps. You will need to set up a new PIN.',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Reset',
-          onPress: async () => {
-            try {
-              // Reset Keychain
-              await Keychain.resetGenericPassword({
-                service: 'applock_service',
-              });
+  // const handleForgotPin = async () => {
+  //   Alert.alert(
+  //     'Reset PIN',
+  //     'This will reset your PIN and unlock all apps. You will need to set up a new PIN.',
+  //     [
+  //       {
+  //         text: 'Cancel',
+  //         style: 'cancel',
+  //       },
+  //       {
+  //         text: 'Reset',
+  //         onPress: async () => {
+  //           try {
+  //             // Reset Keychain
+  //             await Keychain.resetGenericPassword({
+  //               service: 'applock_service',
+  //             });
 
-              // Clear locked apps
-              await AppLockModule.setLockedApps([]);
+  //             // Clear locked apps
+  //             await AppLockModule.setLockedApps([]);
 
-              Alert.alert(
-                'Success',
-                'PIN has been reset. All apps are now unlocked.',
-                [
-                  {
-                    text: 'OK',
-                    onPress: () => {
-                      onClose();
-                      if (onForgotPin) {
-                        onForgotPin();
-                      }
-                    },
-                  },
-                ],
-              );
-            } catch (error) {
-              console.error('Error resetting PIN:', error);
-              Alert.alert('Error', 'Failed to reset PIN');
-            }
-          },
-          style: 'destructive',
-        },
-      ],
-    );
-  };
+  //             Alert.alert(
+  //               'Success',
+  //               'PIN has been reset. All apps are now unlocked.',
+  //               [
+  //                 {
+  //                   text: 'OK',
+  //                   onPress: () => {
+  //                     onClose();
+  //                     if (onForgotPin) {
+  //                       onForgotPin();
+  //                     }
+  //                   },
+  //                 },
+  //               ],
+  //             );
+  //           } catch (error) {
+  //             console.error('Error resetting PIN:', error);
+  //             Alert.alert('Error', 'Failed to reset PIN');
+  //           }
+  //         },
+  //         style: 'destructive',
+  //       },
+  //     ],
+  //   );
+  // };
 
   // Prevent back button from closing the lock screen
+
+  const handleForgotPin = async () => {
+    try {
+      // Check if security question is set
+      const securityQuestion = await AsyncStorage.getItem('security_question');
+      const securityAnswer = await AsyncStorage.getItem('security_answer');
+
+      if (securityQuestion && securityAnswer) {
+        // Navigate to ForgotPinScreen
+        navigation.navigate('ForgotPin');
+        onClose(); // Close the lock screen
+      } else {
+        // Show old alert if no security question is set
+        Alert.alert(
+          'Reset PIN',
+          'This will reset your PIN and unlock all apps. You will need to set up a new PIN.',
+          [
+            {
+              text: 'Cancel',
+              style: 'cancel',
+            },
+            {
+              text: 'Reset',
+              onPress: async () => {
+                try {
+                  // Reset Keychain
+                  await Keychain.resetGenericPassword({
+                    service: 'applock_service',
+                  });
+
+                  // Clear locked apps
+                  await AppLockModule.setLockedApps([]);
+
+                  Alert.alert(
+                    'Success',
+                    'PIN has been reset. All apps are now unlocked.',
+                    [
+                      {
+                        text: 'OK',
+                        onPress: () => {
+                          onClose();
+                          if (onForgotPin) {
+                            onForgotPin();
+                          }
+                        },
+                      },
+                    ],
+                  );
+                } catch (error) {
+                  console.error('Error resetting PIN:', error);
+                  Alert.alert('Error', 'Failed to reset PIN');
+                }
+              },
+              style: 'destructive',
+            },
+          ],
+        );
+      }
+    } catch (error) {
+      console.error('Error checking security question:', error);
+    }
+  };
+
   useEffect(() => {
     const backHandler = BackHandler.addEventListener(
       'hardwareBackPress',

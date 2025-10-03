@@ -34,7 +34,8 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
                     val intent = android.content.Intent(activity, activity::class.java).apply {
                         addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
                                 android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
-                                android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                                android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                                android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
                     }
                     activity.startActivity(intent)
                     Log.d("AppLockModule", "✅ App brought to front successfully")
@@ -44,6 +45,75 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
             }
         } catch (e: Exception) {
             Log.e("AppLockModule", "❌ Error in bringToFront: ${e.message}")
+        }
+    }
+
+    @ReactMethod
+    fun getPendingLockedApp(promise: Promise) {
+        try {
+            Log.d("AppLockModule", "🔍 Checking for pending locked app")
+            val packageName = getPendingLockedAppFromPrefs()
+            val className = getPendingLockedClassFromPrefs()
+            
+            if (packageName != null) {
+                Log.d("AppLockModule", "📦 Found pending locked app: $packageName")
+                val result = WritableNativeMap().apply {
+                    putString("packageName", packageName)
+                    putString("className", className)
+                    putString("timestamp", System.currentTimeMillis().toString())
+                }
+                promise.resolve(result)
+                
+                // Clear the pending app after retrieving
+                clearPendingLockedApp()
+            } else {
+                Log.d("AppLockModule", "📭 No pending locked app found")
+                promise.resolve(null)
+            }
+        } catch (e: Exception) {
+            Log.e("AppLockModule", "❌ Error getting pending locked app: ${e.message}")
+            promise.reject("PENDING_APP_ERROR", e.message)
+        }
+    }
+
+    private fun getPendingLockedAppFromPrefs(): String? {
+        return try {
+            val prefs = reactContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            val packageName = prefs.getString("pendingLockedPackage", null)
+            val timestamp = prefs.getLong("pendingLockedTimestamp", 0)
+            
+            // Only return if it's recent (within 30 seconds)
+            if (packageName != null && System.currentTimeMillis() - timestamp < 30000) {
+                packageName
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("AppLockModule", "❌ Error getting pending locked app from prefs: ${e.message}")
+            null
+        }
+    }
+
+    private fun getPendingLockedClassFromPrefs(): String? {
+        return try {
+            val prefs = reactContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            prefs.getString("pendingLockedClass", null)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun clearPendingLockedApp() {
+        try {
+            val prefs = reactContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            val editor = prefs.edit()
+            editor.remove("pendingLockedPackage")
+            editor.remove("pendingLockedClass")
+            editor.remove("pendingLockedTimestamp")
+            editor.apply()
+            Log.d("AppLockModule", "🧹 Cleared pending locked app")
+        } catch (e: Exception) {
+            Log.e("AppLockModule", "❌ Error clearing pending locked app: ${e.message}")
         }
     }
 
@@ -63,16 +133,17 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
                     val launchIntent = reactContext.packageManager.getLaunchIntentForPackage(packageName)
                     if (launchIntent != null) {
                         // Use standard flags for launching app
-                        launchIntent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                        launchIntent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                                           android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
                         
                         // Start the original app
                         reactContext.startActivity(launchIntent)
                         Log.d("AppLockModule", "✅ Original app launched: $packageName")
                         
-                        // Move our app to background
+                        // Move our app to background after a short delay
                         Handler(Looper.getMainLooper()).postDelayed({
                             moveTaskToBack(activity)
-                        }, 500)
+                        }, 300)
                     } else {
                         Log.e("AppLockModule", "❌ No launch intent found for: $packageName")
                         // Fallback: move to background

@@ -27,14 +27,27 @@ const SettingsScreen = () => {
     navigation.navigate('ChangePassword');
   };
 
+  // Update the handleToggleBiometrics function
   const handleToggleBiometrics = async value => {
     if (value) {
       try {
+        // Check if biometrics is available
+        const {available} = await Biometrics.isSensorAvailable();
+
+        if (!available) {
+          Alert.alert(
+            'Not Available',
+            'Biometric authentication is not available on this device',
+          );
+          return;
+        }
+
         const {success} = await Biometrics.simplePrompt({
           promptMessage: 'Authenticate to enable biometrics',
         });
 
         if (success) {
+          await AsyncStorage.setItem('biometrics_enabled', 'true');
           setBiometricsEnabled(true);
           Alert.alert('Success', 'Biometric authentication enabled');
         } else {
@@ -45,6 +58,7 @@ const SettingsScreen = () => {
         Alert.alert('Error', 'Failed to enable biometric authentication');
       }
     } else {
+      await AsyncStorage.setItem('biometrics_enabled', 'false');
       setBiometricsEnabled(false);
       Alert.alert(
         'Biometrics Disabled',
@@ -52,6 +66,32 @@ const SettingsScreen = () => {
       );
     }
   };
+
+  // const handleToggleBiometrics = async value => {
+  //   if (value) {
+  //     try {
+  //       const {success} = await Biometrics.simplePrompt({
+  //         promptMessage: 'Authenticate to enable biometrics',
+  //       });
+
+  //       if (success) {
+  //         setBiometricsEnabled(true);
+  //         Alert.alert('Success', 'Biometric authentication enabled');
+  //       } else {
+  //         Alert.alert('Error', 'Biometric authentication failed');
+  //       }
+  //     } catch (error) {
+  //       console.error('Error enabling biometrics:', error);
+  //       Alert.alert('Error', 'Failed to enable biometric authentication');
+  //     }
+  //   } else {
+  //     setBiometricsEnabled(false);
+  //     Alert.alert(
+  //       'Biometrics Disabled',
+  //       'Biometric authentication has been disabled',
+  //     );
+  //   }
+  // };
 
   const handleSecurityQuestion = () => {
     navigation.navigate('SecurityQuestion');

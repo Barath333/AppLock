@@ -6,7 +6,6 @@ import {
   Animated,
   Easing,
   Dimensions,
-  Image,
 } from 'react-native';
 
 const {width, height} = Dimensions.get('window');
@@ -16,7 +15,10 @@ const SimpleSplashScreen = ({onAnimationComplete}) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    console.log('🎬 Starting splash screen animation');
+
     const animate = async () => {
+      // Start animations
       Animated.parallel([
         Animated.spring(scaleAnim, {
           toValue: 1,
@@ -34,7 +36,11 @@ const SimpleSplashScreen = ({onAnimationComplete}) => {
 
       // Wait for 2 seconds then complete
       await new Promise(resolve => setTimeout(resolve, 2000));
-      onAnimationComplete();
+
+      console.log('✅ Splash screen animation complete');
+      if (onAnimationComplete) {
+        onAnimationComplete();
+      }
     };
 
     animate();

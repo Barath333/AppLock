@@ -7,7 +7,6 @@ import {
   AppState,
   DeviceEventEmitter,
   LogBox,
-  Platform,
   NativeEventEmitter,
 } from 'react-native';
 import LockScreen from './LockScreen';
@@ -26,56 +25,48 @@ LogBox.ignoreLogs([
 
 const OUR_APP_PACKAGE = 'com.applock';
 
-const LockScreenManager = ({children}) => {
+const LockScreenManager = ({
+  children,
+  initialLockedApp,
+  forceLockScreen = false,
+}) => {
   const [showLockScreen, setShowLockScreen] = useState(false);
   const [currentApp, setCurrentApp] = useState(null);
   const [lockedApps, setLockedApps] = useState([]);
   const [isUnlocking, setIsUnlocking] = useState(false);
+  const [isAppActive, setIsAppActive] = useState(true);
   const appStateRef = useRef(AppState.currentState);
-  const isInitialMount = useRef(true);
+  const hasCheckedPendingApp = useRef(false);
+  const hasHandledInitialApp = useRef(false);
 
   useEffect(() => {
     console.log('🔧 LockScreenManager mounted');
+    console.log('📦 Initial locked app:', initialLockedApp);
+    console.log('🔒 Force lock screen:', forceLockScreen);
 
     // Load initial data
     loadLockedApps();
     checkAllPermissions();
 
+    // Handle initial locked app if provided
+    if (initialLockedApp && !hasHandledInitialApp.current) {
+      console.log(
+        '🚨 Handling initial locked app:',
+        initialLockedApp.packageName,
+      );
+      handleLockedEvent(initialLockedApp);
+      hasHandledInitialApp.current = true;
+      hasCheckedPendingApp.current = true;
+    } else {
+      // Check for pending locked app when component mounts
+      checkPendingLockedApp();
+    }
+
     // Listen for app locked events from native side using NativeEventEmitter
     const lockedSubscription = eventEmitter.addListener(
       'onAppLocked',
       event => {
-        // Prevent showing lock screen if we're currently in the process of unlocking
-        if (isUnlocking) {
-          console.log('⏳ Currently unlocking, ignoring lock event');
-          return;
-        }
-
-        console.log(
-          '🎯 onAppLocked Event Received:',
-          JSON.stringify(event, null, 2),
-        );
-
-        const {packageName, className, timestamp} = event;
-
-        if (packageName && packageName !== OUR_APP_PACKAGE) {
-          console.log('🚨 Showing Lock Screen for:', packageName);
-
-          const appInfo = {
-            packageName: packageName,
-            className: className,
-            name: getAppName(packageName),
-            icon: null,
-            timestamp: timestamp,
-          };
-
-          setCurrentApp(appInfo);
-          setShowLockScreen(true);
-
-          // Bring our app to foreground immediately
-          console.log('🚀 Bringing app to front immediately');
-          AppLockModule.bringToFront();
-        }
+        handleLockedEvent(event);
       },
     );
 
@@ -83,27 +74,7 @@ const LockScreenManager = ({children}) => {
     const deviceEventSubscription = DeviceEventEmitter.addListener(
       'onAppLocked',
       event => {
-        // Prevent showing lock screen if we're currently in the process of unlocking
-        if (isUnlocking) {
-          console.log('⏳ Currently unlocking, ignoring lock event');
-          return;
-        }
-
-        console.log('📱 DeviceEvent Received onAppLocked:', event);
-        if (event.packageName && event.packageName !== OUR_APP_PACKAGE) {
-          const appInfo = {
-            packageName: event.packageName,
-            className: event.className,
-            name: getAppName(event.packageName),
-            icon: null,
-            timestamp: event.timestamp,
-          };
-          setCurrentApp(appInfo);
-          setShowLockScreen(true);
-
-          // Bring to front immediately
-          AppLockModule.bringToFront();
-        }
+        handleLockedEvent(event);
       },
     );
 
@@ -118,6 +89,8 @@ const LockScreenManager = ({children}) => {
           nextAppState,
         );
 
+        setIsAppActive(nextAppState === 'active');
+
         // Reset unlocking state when app goes to background
         if (nextAppState === 'background') {
           console.log('📱 App went to background, resetting unlock state');
@@ -127,8 +100,15 @@ const LockScreenManager = ({children}) => {
         appStateRef.current = nextAppState;
 
         if (nextAppState === 'active') {
-          console.log('🔄 App is active, checking permissions');
+          console.log(
+            '🔄 App is active, checking permissions and pending apps',
+          );
           checkAccessibilityService();
+
+          // Only check for pending apps if not already handled
+          if (!hasCheckedPendingApp.current && !hasHandledInitialApp.current) {
+            checkPendingLockedApp();
+          }
         }
       },
     );
@@ -155,13 +135,100 @@ const LockScreenManager = ({children}) => {
       appStateSubscription.remove();
       backHandler.remove();
     };
-  }, [isUnlocking]);
+  }, [isUnlocking, showLockScreen, initialLockedApp, forceLockScreen]);
+
+  const checkPendingLockedApp = async () => {
+    if (hasCheckedPendingApp.current) {
+      console.log('⏭️ Already checked for pending app, skipping');
+      return;
+    }
+
+    try {
+      console.log('🔍 Checking for pending locked app...');
+
+      // First, check if the method exists
+      if (
+        AppLockModule &&
+        typeof AppLockModule.getPendingLockedApp === 'function'
+      ) {
+        const pendingApp = await AppLockModule.getPendingLockedApp();
+
+        if (pendingApp && pendingApp.packageName) {
+          console.log('🚨 Found pending locked app:', pendingApp.packageName);
+          handleLockedEvent(pendingApp);
+          hasCheckedPendingApp.current = true;
+        } else {
+          console.log('📭 No pending locked app found');
+          hasCheckedPendingApp.current = true;
+        }
+      } else {
+        console.log(
+          '⚠️ getPendingLockedApp method not available, using event emitter only',
+        );
+        hasCheckedPendingApp.current = true;
+      }
+    } catch (error) {
+      console.error('❌ Error checking pending locked app:', error);
+      hasCheckedPendingApp.current = true;
+    }
+  };
+
+  const handleLockedEvent = event => {
+    // Prevent showing lock screen if we're currently in the process of unlocking
+    if (isUnlocking) {
+      console.log('⏳ Currently unlocking, ignoring lock event');
+      return;
+    }
+
+    console.log('🎯 Lock Event Received:', JSON.stringify(event, null, 2));
+
+    const {packageName, className, timestamp} = event;
+
+    if (packageName && packageName !== OUR_APP_PACKAGE) {
+      console.log('🚨 Showing Lock Screen for:', packageName);
+
+      const appInfo = {
+        packageName: packageName,
+        className: className,
+        name: getAppName(packageName),
+        icon: null,
+        timestamp: timestamp || Date.now().toString(),
+      };
+
+      setCurrentApp(appInfo);
+      setShowLockScreen(true);
+
+      // Ensure our app is in foreground and focused
+      console.log('🚀 Bringing app to front immediately');
+      AppLockModule.bringToFront();
+    }
+  };
 
   useEffect(() => {
     console.log('🔒 Lock Screen State Changed:', showLockScreen);
     console.log('📱 Current App:', currentApp);
     console.log('🔓 Unlocking State:', isUnlocking);
-  }, [showLockScreen, currentApp, isUnlocking]);
+    console.log('📱 App Active State:', isAppActive);
+
+    // If forceLockScreen is true and we have an initial app, ensure lock screen is shown
+    if (
+      forceLockScreen &&
+      initialLockedApp &&
+      !showLockScreen &&
+      !hasHandledInitialApp.current
+    ) {
+      console.log('🔒 Forcing lock screen display');
+      handleLockedEvent(initialLockedApp);
+      hasHandledInitialApp.current = true;
+    }
+  }, [
+    showLockScreen,
+    currentApp,
+    isUnlocking,
+    isAppActive,
+    forceLockScreen,
+    initialLockedApp,
+  ]);
 
   const getAppName = packageName => {
     // Extract app name from package name
@@ -236,27 +303,47 @@ const LockScreenManager = ({children}) => {
 
   const loadLockedApps = async () => {
     try {
-      console.log('📦 Loading locked apps from storage...');
+      console.log('📦 HomeScreen: Loading locked apps');
       const savedLockedApps = await AsyncStorage.getItem('lockedApps');
+      let lockedSet = new Set();
 
       if (savedLockedApps) {
-        const apps = JSON.parse(savedLockedApps);
-        console.log('🔒 Loaded Locked Apps:', apps);
-        setLockedApps(apps);
+        let lockedAppsArray;
+        try {
+          lockedAppsArray = JSON.parse(savedLockedApps);
+          console.log('📋 Raw locked apps from storage:', lockedAppsArray);
+        } catch (e) {
+          console.error('❌ Error parsing locked apps:', e);
+          await AsyncStorage.removeItem('lockedApps');
+          lockedAppsArray = [];
+        }
 
-        // Update native module with package names only
-        const packageNames = Array.isArray(apps)
-          ? apps.map(app => (typeof app === 'object' ? app.packageName : app))
-          : [];
+        if (Array.isArray(lockedAppsArray) && lockedAppsArray.length > 0) {
+          lockedAppsArray.forEach(item => {
+            let packageName;
+            if (typeof item === 'string') {
+              packageName = item;
+            } else if (typeof item === 'object' && item.packageName) {
+              packageName = item.packageName;
+            }
 
-        console.log('📋 Sending to native module:', packageNames);
-        await AppLockModule.setLockedApps(packageNames);
-      } else {
-        console.log('📭 No locked apps found in storage');
-        setLockedApps([]);
+            if (packageName && packageName !== OUR_APP_PACKAGE) {
+              lockedSet.add(packageName);
+            }
+          });
+        }
+      }
+
+      console.log('🔒 Final locked apps set:', Array.from(lockedSet));
+      setLockedApps(Array.from(lockedSet));
+
+      // Update native module
+      const packageNamesArray = Array.from(lockedSet);
+      if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
+        await AppLockModule.setLockedApps(packageNamesArray);
       }
     } catch (error) {
-      console.error('❌ Error loading locked apps:', error);
+      console.error('❌ HomeScreen: Error loading locked apps:', error);
     }
   };
 
@@ -301,7 +388,7 @@ const LockScreenManager = ({children}) => {
     console.log('🔑 Forgot PIN flow started');
     Alert.alert(
       'Reset PIN',
-      'This will require you to set up a new PIN. All your locked apps will be unlocked.',
+      'This will reset your PIN and unlock all apps. You will need to set up a new PIN.',
       [
         {
           text: 'Cancel',
@@ -323,7 +410,7 @@ const LockScreenManager = ({children}) => {
               setIsUnlocking(false);
               Alert.alert(
                 'Success',
-                'PIN has been reset. Please set up a new PIN.',
+                'PIN has been reset. All apps are now unlocked.',
               );
             } catch (error) {
               console.error('❌ Error resetting PIN:', error);
@@ -345,6 +432,7 @@ const LockScreenManager = ({children}) => {
         onUnlock={handleUnlock}
         onClose={handleClose}
         onForgotPin={handleForgotPin}
+        
       />
     </View>
   );
