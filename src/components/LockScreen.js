@@ -32,6 +32,8 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
   const [showPin, setShowPin] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockUntil, setLockUntil] = useState(null);
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -39,16 +41,81 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
       setPin('');
       setError('');
       setIsLoading(false);
-      // Debug: Check if launchApp method exists
+      loadFailedAttempts();
       console.log('🔍 AppLockModule methods:', Object.keys(AppLockModule));
-      console.log(
-        '🔍 launchApp method exists:',
-        typeof AppLockModule.launchApp === 'function',
-      );
     }
   }, [visible, appInfo]);
 
+  const loadFailedAttempts = async () => {
+    try {
+      const attempts = await AsyncStorage.getItem('failed_attempts');
+      const lockUntilTime = await AsyncStorage.getItem('lock_until');
+
+      if (attempts) {
+        setFailedAttempts(parseInt(attempts, 10));
+      }
+      if (lockUntilTime) {
+        const lockTime = parseInt(lockUntilTime, 10);
+        if (Date.now() < lockTime) {
+          setLockUntil(lockTime);
+        } else {
+          // Reset if lock time has passed
+          await resetFailedAttempts();
+        }
+      }
+    } catch (error) {
+      console.error('Error loading failed attempts:', error);
+    }
+  };
+
+  const resetFailedAttempts = async () => {
+    setFailedAttempts(0);
+    setLockUntil(null);
+    try {
+      await AsyncStorage.multiRemove(['failed_attempts', 'lock_until']);
+    } catch (error) {
+      console.error('Error resetting failed attempts:', error);
+    }
+  };
+
+  const incrementFailedAttempts = async () => {
+    const newFailedAttempts = failedAttempts + 1;
+    setFailedAttempts(newFailedAttempts);
+
+    if (newFailedAttempts >= 5) {
+      const lockTime = Date.now() + 5 * 60 * 1000; // 5 minutes
+      setLockUntil(lockTime);
+      try {
+        await AsyncStorage.setItem(
+          'failed_attempts',
+          newFailedAttempts.toString(),
+        );
+        await AsyncStorage.setItem('lock_until', lockTime.toString());
+      } catch (error) {
+        console.error('Error saving failed attempts:', error);
+      }
+    } else {
+      try {
+        await AsyncStorage.setItem(
+          'failed_attempts',
+          newFailedAttempts.toString(),
+        );
+      } catch (error) {
+        console.error('Error saving failed attempts:', error);
+      }
+    }
+  };
+
   const handleUnlock = async () => {
+    // Check if temporarily locked
+    if (lockUntil && Date.now() < lockUntil) {
+      const remainingTime = Math.ceil((lockUntil - Date.now()) / 1000 / 60);
+      setError(
+        `Too many failed attempts. Try again in ${remainingTime} minutes`,
+      );
+      return;
+    }
+
     if (pin.length < 4) {
       setError('PIN must be at least 4 digits');
       return;
@@ -71,6 +138,7 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
 
       if (credentials && credentials.password === pin) {
         console.log('✅ PIN verified successfully');
+        await resetFailedAttempts();
 
         // Try to launch the original app
         if (appInfo?.packageName) {
@@ -79,7 +147,6 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
             appInfo.packageName,
           );
 
-          // Check if launchApp method exists
           if (typeof AppLockModule.launchApp === 'function') {
             console.log('✅ launchApp method is available');
             AppLockModule.launchApp(appInfo.packageName);
@@ -87,7 +154,6 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
             console.log(
               '❌ launchApp method not available, using closeLockScreen',
             );
-            // Fallback: just close the lock screen
             AppLockModule.closeLockScreen();
           }
         } else {
@@ -95,11 +161,18 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
           AppLockModule.closeLockScreen();
         }
 
-        // Call onUnlock to update state
         onUnlock();
       } else {
         console.log('❌ Invalid PIN');
-        setError('Invalid PIN');
+        await incrementFailedAttempts();
+
+        const remainingAttempts = 5 - (failedAttempts + 1);
+        if (remainingAttempts > 0) {
+          setError(`Invalid PIN. ${remainingAttempts} attempts remaining`);
+        } else {
+          setError('Too many failed attempts. App locked for 5 minutes.');
+        }
+
         setPin('');
         // Shake animation for wrong PIN
         Animated.sequence([
@@ -135,19 +208,16 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
 
   const handleForgotPin = async () => {
     try {
-      // Check if security question is set
       const securityQuestion = await AsyncStorage.getItem('security_question');
       const securityAnswer = await AsyncStorage.getItem('security_answer');
 
       if (securityQuestion && securityAnswer) {
-        // Call the onForgotPin prop instead of navigation.navigate
         console.log('🔄 Calling onForgotPin prop');
         if (onForgotPin) {
-          onForgotPin(); // This will trigger the navigation in LockScreenManager
+          onForgotPin();
         }
-        onClose(); // Close the lock screen
+        onClose();
       } else {
-        // Show old alert if no security question is set
         Alert.alert(
           'Reset PIN',
           'This will reset your PIN and unlock all apps. You will need to set up a new PIN.',
@@ -160,13 +230,17 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
               text: 'Reset',
               onPress: async () => {
                 try {
-                  // Reset Keychain
                   await Keychain.resetGenericPassword({
                     service: 'applock_service',
                   });
-
-                  // Clear locked apps
-                  await AppLockModule.setLockedApps([]);
+                  await AsyncStorage.removeItem('lockedApps');
+                  if (
+                    AppLockModule &&
+                    typeof AppLockModule.setLockedApps === 'function'
+                  ) {
+                    await AppLockModule.setLockedApps([]);
+                  }
+                  await resetFailedAttempts();
 
                   Alert.alert(
                     'Success',
@@ -253,6 +327,16 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
           <Text style={styles.appName}>{appInfo.name} is locked</Text>
           <Text style={styles.prompt}>Enter your PIN to unlock</Text>
 
+          {lockUntil && Date.now() < lockUntil && (
+            <View style={styles.lockWarning}>
+              <Icon name="lock-alert" size={24} color="#FF9800" />
+              <Text style={styles.lockWarningText}>
+                Too many failed attempts. Try again in{' '}
+                {Math.ceil((lockUntil - Date.now()) / 1000 / 60)} minutes.
+              </Text>
+            </View>
+          )}
+
           <Animated.View
             style={[
               styles.inputContainer,
@@ -262,7 +346,7 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
               value={pin}
               onChangeText={text => {
                 setPin(text);
-                setError(''); // Clear error when user types
+                setError('');
               }}
               secureTextEntry={!showPin}
               keyboardType="numeric"
@@ -274,6 +358,7 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
               theme={{
                 colors: {primary: '#1E88E5', text: '#333', placeholder: '#888'},
               }}
+              editable={!lockUntil || Date.now() >= lockUntil}
               right={
                 <TextInput.Icon
                   icon={showPin ? 'eye-off' : 'eye'}
@@ -290,7 +375,11 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
             mode="contained"
             onPress={handleUnlock}
             style={styles.unlockButton}
-            disabled={pin.length < 4 || isLoading}
+            disabled={
+              pin.length < 4 ||
+              isLoading ||
+              (lockUntil && Date.now() < lockUntil)
+            }
             loading={isLoading}
             labelStyle={styles.unlockButtonLabel}>
             Unlock
@@ -372,6 +461,22 @@ const styles = StyleSheet.create({
     marginBottom: 30,
     color: '#666',
     textAlign: 'center',
+  },
+  lockWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF3E0',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+  },
+  lockWarningText: {
+    marginLeft: 8,
+    color: '#E65100',
+    fontSize: 14,
+    flex: 1,
   },
   inputContainer: {
     width: '100%',

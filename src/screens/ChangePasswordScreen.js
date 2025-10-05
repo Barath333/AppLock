@@ -3,6 +3,7 @@ import {View, Text, StyleSheet, ScrollView, Alert} from 'react-native';
 import {TextInput, Button, Card} from 'react-native-paper';
 import {useNavigation} from '@react-navigation/native';
 import * as Keychain from 'react-native-keychain';
+import {validatePINStrength} from '../utils/securityUtils';
 
 const ChangePasswordScreen = () => {
   const navigation = useNavigation();
@@ -13,6 +14,17 @@ const ChangePasswordScreen = () => {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [pinStrength, setPinStrength] = useState({valid: true, message: ''});
+
+  const handleNewPinChange = text => {
+    setNewPassword(text);
+    if (text.length >= 4) {
+      const strength = validatePINStrength(text);
+      setPinStrength(strength);
+    } else {
+      setPinStrength({valid: true, message: ''});
+    }
+  };
 
   const handleChangePassword = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
@@ -22,6 +34,13 @@ const ChangePasswordScreen = () => {
 
     if (newPassword.length < 4) {
       Alert.alert('Error', 'New PIN must be at least 4 digits');
+      return;
+    }
+
+    // Check PIN strength
+    const strengthCheck = validatePINStrength(newPassword);
+    if (!strengthCheck.valid) {
+      Alert.alert('Weak PIN', strengthCheck.message);
       return;
     }
 
@@ -99,12 +118,14 @@ const ChangePasswordScreen = () => {
           <TextInput
             label="New PIN (4-6 digits)"
             value={newPassword}
-            onChangeText={setNewPassword}
+            onChangeText={handleNewPinChange}
             secureTextEntry={!showNewPassword}
             keyboardType="numeric"
             style={styles.input}
             mode="outlined"
             maxLength={6}
+            outlineColor={pinStrength.valid ? '#E0E0E0' : '#FF3B30'}
+            activeOutlineColor={pinStrength.valid ? '#1E88E5' : '#FF3B30'}
             right={
               <TextInput.Icon
                 icon={showNewPassword ? 'eye-off' : 'eye'}
@@ -113,6 +134,10 @@ const ChangePasswordScreen = () => {
               />
             }
           />
+
+          {!pinStrength.valid && (
+            <Text style={styles.warningText}>⚠️ {pinStrength.message}</Text>
+          )}
 
           <TextInput
             label="Confirm New PIN"
@@ -137,7 +162,7 @@ const ChangePasswordScreen = () => {
             onPress={handleChangePassword}
             style={styles.button}
             loading={isLoading}
-            disabled={isLoading}>
+            disabled={isLoading || !pinStrength.valid}>
             Change PIN
           </Button>
 
@@ -145,6 +170,8 @@ const ChangePasswordScreen = () => {
             <Text style={styles.tipsTitle}>PIN Security Tips:</Text>
             <Text style={styles.tip}>• Use at least 4 digits</Text>
             <Text style={styles.tip}>• Avoid simple patterns like 1234</Text>
+            <Text style={styles.tip}>• Don't use sequential numbers</Text>
+            <Text style={styles.tip}>• Avoid repeated digits</Text>
             <Text style={styles.tip}>• Don't use your birth date</Text>
             <Text style={styles.tip}>• Change your PIN regularly</Text>
           </View>
@@ -181,6 +208,12 @@ const styles = StyleSheet.create({
   input: {
     marginBottom: 16,
     backgroundColor: 'white',
+  },
+  warningText: {
+    color: '#FF3B30',
+    fontSize: 14,
+    marginBottom: 16,
+    textAlign: 'center',
   },
   button: {
     marginTop: 8,

@@ -1,16 +1,23 @@
 import React, {useState, useEffect, useRef} from 'react';
-import {StyleSheet, StatusBar} from 'react-native';
-import {Provider as PaperProvider, DefaultTheme} from 'react-native-paper';
+import {StyleSheet, StatusBar, Alert, BackHandler, View} from 'react-native';
+import {
+  Provider as PaperProvider,
+  DefaultTheme,
+  Text,
+} from 'react-native-paper';
 import AppNavigator from './src/navigation/AppNavigator';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import SimpleSplashScreen from './src/components/SimpleSplashScreen';
 import LockScreenManager from './src/components/LockScreenManager';
 import {NativeModules} from 'react-native';
 import {NavigationContainer} from '@react-navigation/native';
+import {
+  checkDeviceSecurity,
+  checkAppTampering,
+} from './src/utils/securityUtils';
 
 const {AppLockModule} = NativeModules;
 
-// Custom theme with #1E88E5 as primary color
 const theme = {
   ...DefaultTheme,
   colors: {
@@ -28,22 +35,72 @@ export default function App() {
   const [isSplashVisible, setIsSplashVisible] = useState(true);
   const [isLockScreenMode, setIsLockScreenMode] = useState(false);
   const [pendingLockedApp, setPendingLockedApp] = useState(null);
+  const [securityWarning, setSecurityWarning] = useState(null);
 
-  // Create a navigation reference
   const navigationRef = useRef();
 
   const handleForgotPin = () => {
-    // Use the navigation ref to navigate
     navigationRef.current?.navigate('ForgotPin');
   };
 
   useEffect(() => {
     console.log('🚀 App component mounted');
+    checkSecurity();
     checkLockScreenMode();
     return () => {
       // Cleanup if needed
     };
   }, []);
+
+  const checkSecurity = async () => {
+    try {
+      const deviceSecurity = await checkDeviceSecurity();
+      const appTampering = await checkAppTampering();
+
+      const warnings = [];
+
+      if (deviceSecurity.isRooted) {
+        warnings.push('Rooted device detected - security may be compromised');
+      }
+
+      if (deviceSecurity.isJailBroken) {
+        warnings.push(
+          'Jailbroken device detected - security may be compromised',
+        );
+      }
+
+      if (appTampering.isEmulator) {
+        warnings.push('Running in emulator - security may be compromised');
+      }
+
+      if (warnings.length > 0) {
+        setSecurityWarning(warnings.join('\n• '));
+
+        // Show alert for serious security issues
+        if (deviceSecurity.isRooted || deviceSecurity.isJailBroken) {
+          Alert.alert(
+            'Security Warning',
+            `Your device may not be secure:\n\n• ${warnings.join(
+              '\n• ',
+            )}\n\nFor maximum security, please use a non-rooted device.`,
+            [
+              {
+                text: 'Continue Anyway',
+                style: 'default',
+              },
+              {
+                text: 'Exit App',
+                style: 'destructive',
+                onPress: () => BackHandler.exitApp(),
+              },
+            ],
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Security check error:', error);
+    }
+  };
 
   const checkLockScreenMode = async () => {
     try {
@@ -124,6 +181,11 @@ export default function App() {
     <GestureHandlerRootView style={styles.container}>
       <PaperProvider theme={theme}>
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        {securityWarning && (
+          <View style={styles.securityWarning}>
+            <Text style={styles.securityWarningText}>⚠️ {securityWarning}</Text>
+          </View>
+        )}
         <NavigationContainer ref={navigationRef}>
           <LockScreenManager onForgotPin={handleForgotPin}>
             <AppNavigator />
@@ -137,5 +199,16 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  securityWarning: {
+    backgroundColor: '#FFF3E0',
+    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#FF9800',
+  },
+  securityWarningText: {
+    color: '#E65100',
+    fontSize: 12,
+    textAlign: 'center',
   },
 });

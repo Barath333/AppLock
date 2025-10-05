@@ -5,12 +5,14 @@ import {useNavigation} from '@react-navigation/native';
 import * as Keychain from 'react-native-keychain';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { validatePINStrength } from '../utils/securityUtils';
 
 const SetupScreen = () => {
   const navigation = useNavigation();
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [showPin, setShowPin] = useState(false);
+  const [pinStrength, setPinStrength] = useState({ valid: true, message: '' });
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
 
@@ -30,9 +32,26 @@ const SetupScreen = () => {
     ]).start();
   }, [fadeAnim, slideAnim]);
 
+  const handlePinChange = (text) => {
+    setPin(text);
+    if (text.length >= 4) {
+      const strength = validatePINStrength(text);
+      setPinStrength(strength);
+    } else {
+      setPinStrength({ valid: true, message: '' });
+    }
+  };
+
   const handleSetupComplete = async () => {
     if (pin.length < 4) {
       Alert.alert('Error', 'PIN must be at least 4 digits');
+      return;
+    }
+
+    // Check PIN strength
+    const strengthCheck = validatePINStrength(pin);
+    if (!strengthCheck.valid) {
+      Alert.alert('Weak PIN', strengthCheck.message);
       return;
     }
 
@@ -92,14 +111,14 @@ const SetupScreen = () => {
         <TextInput
           label="Enter PIN (4-6 digits)"
           value={pin}
-          onChangeText={setPin}
+          onChangeText={handlePinChange}
           secureTextEntry={!showPin}
           keyboardType="numeric"
           style={styles.input}
           maxLength={6}
           mode="outlined"
           outlineColor="#E0E0E0"
-          activeOutlineColor="#1E88E5"
+          activeOutlineColor={pinStrength.valid ? '#1E88E5' : '#FF3B30'}
           right={
             <TextInput.Icon
               icon={showPin ? 'eye-off' : 'eye'}
@@ -108,6 +127,10 @@ const SetupScreen = () => {
             />
           }
         />
+
+        {!pinStrength.valid && (
+          <Text style={styles.warningText}>⚠️ {pinStrength.message}</Text>
+        )}
 
         <TextInput
           label="Confirm PIN"
@@ -122,11 +145,20 @@ const SetupScreen = () => {
           activeOutlineColor="#1E88E5"
         />
 
+        <View style={styles.securityTips}>
+          <Text style={styles.tipsTitle}>PIN Security Tips:</Text>
+          <Text style={styles.tip}>• Use at least 4 digits</Text>
+          <Text style={styles.tip}>• Avoid simple patterns like 1234</Text>
+          <Text style={styles.tip}>• Don't use sequential numbers</Text>
+          <Text style={styles.tip}>• Avoid repeated digits</Text>
+          <Text style={styles.tip}>• Don't use your birth date</Text>
+        </View>
+
         <Button
           mode="contained"
           onPress={handleSetupComplete}
           style={styles.button}
-          disabled={pin.length < 4 || confirmPin.length < 4}
+          disabled={pin.length < 4 || confirmPin.length < 4 || !pinStrength.valid}
           labelStyle={styles.buttonLabel}>
           Complete Setup
         </Button>
@@ -169,10 +201,35 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   input: {
-    marginBottom: 20,
+    marginBottom: 10,
     backgroundColor: 'white',
     width: '100%',
     fontSize: 16,
+  },
+  warningText: {
+    color: '#FF3B30',
+    fontSize: 14,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  securityTips: {
+    backgroundColor: '#E3F2FD',
+    padding: 16,
+    borderRadius: 8,
+    marginVertical: 20,
+    width: '100%',
+  },
+  tipsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E88E5',
+    marginBottom: 8,
+  },
+  tip: {
+    fontSize: 14,
+    color: '#333',
+    marginBottom: 4,
+    marginLeft: 8,
   },
   button: {
     marginTop: 20,

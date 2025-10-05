@@ -1,18 +1,45 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect} from 'react';
 import {View, Text, StyleSheet, ScrollView, Alert, Switch} from 'react-native';
-import {List, Button, Divider} from 'react-native-paper';
+import {List, Button, Divider, Card} from 'react-native-paper';
 import {useNavigation} from '@react-navigation/native';
 import * as Keychain from 'react-native-keychain';
 import * as Biometrics from 'react-native-biometrics';
+import {checkDeviceSecurity, checkAppTampering} from '../utils/securityUtils';
 
 const SettingsScreen = () => {
   const navigation = useNavigation();
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
   const [isPremium, setIsPremium] = useState(false);
+  const [securityStatus, setSecurityStatus] = useState({
+    deviceSecure: true,
+    appSecure: true,
+    warnings: [],
+  });
 
   React.useEffect(() => {
     checkBiometricsAvailability();
+    checkSecurityStatus();
   }, []);
+
+  const checkSecurityStatus = async () => {
+    try {
+      const deviceSecurity = await checkDeviceSecurity();
+      const appTampering = await checkAppTampering();
+
+      const warnings = [];
+      if (deviceSecurity.isRooted) warnings.push('Rooted device');
+      if (deviceSecurity.isJailBroken) warnings.push('Jailbroken device');
+      if (appTampering.isEmulator) warnings.push('Running in emulator');
+
+      setSecurityStatus({
+        deviceSecure: !deviceSecurity.isRooted && !deviceSecurity.isJailBroken,
+        appSecure: !appTampering.isTampered,
+        warnings,
+      });
+    } catch (error) {
+      console.error('Error checking security status:', error);
+    }
+  };
 
   const checkBiometricsAvailability = async () => {
     try {
@@ -27,11 +54,9 @@ const SettingsScreen = () => {
     navigation.navigate('ChangePassword');
   };
 
-  // Update the handleToggleBiometrics function
   const handleToggleBiometrics = async value => {
     if (value) {
       try {
-        // Check if biometrics is available
         const {available} = await Biometrics.isSensorAvailable();
 
         if (!available) {
@@ -67,32 +92,6 @@ const SettingsScreen = () => {
     }
   };
 
-  // const handleToggleBiometrics = async value => {
-  //   if (value) {
-  //     try {
-  //       const {success} = await Biometrics.simplePrompt({
-  //         promptMessage: 'Authenticate to enable biometrics',
-  //       });
-
-  //       if (success) {
-  //         setBiometricsEnabled(true);
-  //         Alert.alert('Success', 'Biometric authentication enabled');
-  //       } else {
-  //         Alert.alert('Error', 'Biometric authentication failed');
-  //       }
-  //     } catch (error) {
-  //       console.error('Error enabling biometrics:', error);
-  //       Alert.alert('Error', 'Failed to enable biometric authentication');
-  //     }
-  //   } else {
-  //     setBiometricsEnabled(false);
-  //     Alert.alert(
-  //       'Biometrics Disabled',
-  //       'Biometric authentication has been disabled',
-  //     );
-  //   }
-  // };
-
   const handleSecurityQuestion = () => {
     navigation.navigate('SecurityQuestion');
   };
@@ -112,6 +111,43 @@ const SettingsScreen = () => {
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.title}>Settings</Text>
+
+      {/* Security Status Card */}
+      <Card style={styles.securityCard}>
+        <Card.Content>
+          <View style={styles.securityHeader}>
+            <Text style={styles.securityTitle}>Security Status</Text>
+            <View
+              style={[
+                styles.statusIndicator,
+                securityStatus.deviceSecure && securityStatus.appSecure
+                  ? styles.statusSecure
+                  : styles.statusWarning,
+              ]}>
+              <Text style={styles.statusText}>
+                {securityStatus.deviceSecure && securityStatus.appSecure
+                  ? 'Secure'
+                  : 'Warning'}
+              </Text>
+            </View>
+          </View>
+
+          {securityStatus.warnings.length > 0 ? (
+            <View style={styles.warningsContainer}>
+              <Text style={styles.warningsTitle}>Security Warnings:</Text>
+              {securityStatus.warnings.map((warning, index) => (
+                <Text key={index} style={styles.warningItem}>
+                  • {warning}
+                </Text>
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.secureText}>
+              Your device and app are secure
+            </Text>
+          )}
+        </Card.Content>
+      </Card>
 
       <List.Section>
         <List.Subheader style={styles.sectionHeader}>Security</List.Subheader>
@@ -208,6 +244,59 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginVertical: 20,
     color: '#1E88E5',
+  },
+  securityCard: {
+    margin: 16,
+    borderRadius: 12,
+    elevation: 4,
+  },
+  securityHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  securityTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+  },
+  statusIndicator: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusSecure: {
+    backgroundColor: '#E8F5E9',
+  },
+  statusWarning: {
+    backgroundColor: '#FFF3E0',
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#333',
+  },
+  warningsContainer: {
+    backgroundColor: '#FFF3E0',
+    padding: 12,
+    borderRadius: 8,
+  },
+  warningsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#E65100',
+    marginBottom: 4,
+  },
+  warningItem: {
+    fontSize: 12,
+    color: '#E65100',
+    marginLeft: 8,
+  },
+  secureText: {
+    fontSize: 14,
+    color: '#4CAF50',
+    textAlign: 'center',
   },
   sectionHeader: {
     color: '#1E88E5',
