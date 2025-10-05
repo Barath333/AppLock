@@ -17,6 +17,7 @@ import {TextInput, Button} from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import * as Keychain from 'react-native-keychain';
 import {BannerAd, BannerAdSize, TestIds} from 'react-native-google-mobile-ads';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const {AppLockModule} = NativeModules;
 
@@ -132,55 +133,6 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
     }
   };
 
-  // const handleForgotPin = async () => {
-  //   Alert.alert(
-  //     'Reset PIN',
-  //     'This will reset your PIN and unlock all apps. You will need to set up a new PIN.',
-  //     [
-  //       {
-  //         text: 'Cancel',
-  //         style: 'cancel',
-  //       },
-  //       {
-  //         text: 'Reset',
-  //         onPress: async () => {
-  //           try {
-  //             // Reset Keychain
-  //             await Keychain.resetGenericPassword({
-  //               service: 'applock_service',
-  //             });
-
-  //             // Clear locked apps
-  //             await AppLockModule.setLockedApps([]);
-
-  //             Alert.alert(
-  //               'Success',
-  //               'PIN has been reset. All apps are now unlocked.',
-  //               [
-  //                 {
-  //                   text: 'OK',
-  //                   onPress: () => {
-  //                     onClose();
-  //                     if (onForgotPin) {
-  //                       onForgotPin();
-  //                     }
-  //                   },
-  //                 },
-  //               ],
-  //             );
-  //           } catch (error) {
-  //             console.error('Error resetting PIN:', error);
-  //             Alert.alert('Error', 'Failed to reset PIN');
-  //           }
-  //         },
-  //         style: 'destructive',
-  //       },
-  //     ],
-  //   );
-  // };
-
-  // Prevent back button from closing the lock screen
-
   const handleForgotPin = async () => {
     try {
       // Check if security question is set
@@ -188,8 +140,11 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
       const securityAnswer = await AsyncStorage.getItem('security_answer');
 
       if (securityQuestion && securityAnswer) {
-        // Navigate to ForgotPinScreen
-        navigation.navigate('ForgotPin');
+        // Call the onForgotPin prop instead of navigation.navigate
+        console.log('🔄 Calling onForgotPin prop');
+        if (onForgotPin) {
+          onForgotPin(); // This will trigger the navigation in LockScreenManager
+        }
         onClose(); // Close the lock screen
       } else {
         // Show old alert if no security question is set
@@ -443,6 +398,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     paddingVertical: 6,
+    color: '#FFF',
   },
   forgotButton: {
     marginBottom: 20,

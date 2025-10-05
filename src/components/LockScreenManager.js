@@ -29,6 +29,7 @@ const LockScreenManager = ({
   children,
   initialLockedApp,
   forceLockScreen = false,
+  onForgotPin,
 }) => {
   const [showLockScreen, setShowLockScreen] = useState(false);
   const [currentApp, setCurrentApp] = useState(null);
@@ -385,42 +386,70 @@ const LockScreenManager = ({
   };
 
   const handleForgotPin = async () => {
-    console.log('🔑 Forgot PIN flow started');
-    Alert.alert(
-      'Reset PIN',
-      'This will reset your PIN and unlock all apps. You will need to set up a new PIN.',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-          onPress: () => console.log('❌ PIN reset cancelled'),
-        },
-        {
-          text: 'Reset',
-          onPress: async () => {
-            try {
-              console.log('🔄 Resetting PIN and locked apps...');
-              await AsyncStorage.removeItem('applock_pin');
-              await AsyncStorage.removeItem('lockedApps');
-              await AsyncStorage.removeItem('setupCompleted'); // Clear setup flag
-              setLockedApps([]);
-              await AppLockModule.setLockedApps([]);
-              setShowLockScreen(false);
-              setCurrentApp(null);
-              setIsUnlocking(false);
-              Alert.alert(
-                'Success',
-                'PIN has been reset. All apps are now unlocked.',
-              );
-            } catch (error) {
-              console.error('❌ Error resetting PIN:', error);
-              Alert.alert('Error', 'Failed to reset PIN');
-            }
-          },
-          style: 'destructive',
-        },
-      ],
-    );
+    try {
+      const securityQuestion = await AsyncStorage.getItem('security_question');
+      const securityAnswer = await AsyncStorage.getItem('security_answer');
+
+      if (securityQuestion && securityAnswer) {
+        // Close the lock screen first
+        setShowLockScreen(false);
+        setCurrentApp(null);
+        setIsUnlocking(false);
+
+        // Then call the parent handler to navigate
+        if (onForgotPin) {
+          onForgotPin();
+        }
+      } else {
+        // Show old alert if no security question is set
+        Alert.alert(
+          'Reset PIN',
+          'This will reset your PIN and unlock all apps. You will need to set up a new PIN.',
+          [
+            {
+              text: 'Cancel',
+              style: 'cancel',
+            },
+            {
+              text: 'Reset',
+              onPress: async () => {
+                try {
+                  // Reset Keychain
+                  await Keychain.resetGenericPassword({
+                    service: 'applock_service',
+                  });
+
+                  // Clear locked apps
+                  await AppLockModule.setLockedApps([]);
+
+                  Alert.alert(
+                    'Success',
+                    'PIN has been reset. All apps are now unlocked.',
+                    [
+                      {
+                        text: 'OK',
+                        onPress: () => {
+                          handleClose();
+                          if (onForgotPin) {
+                            onForgotPin();
+                          }
+                        },
+                      },
+                    ],
+                  );
+                } catch (error) {
+                  console.error('Error resetting PIN:', error);
+                  Alert.alert('Error', 'Failed to reset PIN');
+                }
+              },
+              style: 'destructive',
+            },
+          ],
+        );
+      }
+    } catch (error) {
+      console.error('Error checking security question:', error);
+    }
   };
 
   return (
@@ -432,7 +461,6 @@ const LockScreenManager = ({
         onUnlock={handleUnlock}
         onClose={handleClose}
         onForgotPin={handleForgotPin}
-        
       />
     </View>
   );

@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {StyleSheet, StatusBar} from 'react-native';
 import {Provider as PaperProvider, DefaultTheme} from 'react-native-paper';
 import AppNavigator from './src/navigation/AppNavigator';
@@ -6,6 +6,7 @@ import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import SimpleSplashScreen from './src/components/SimpleSplashScreen';
 import LockScreenManager from './src/components/LockScreenManager';
 import {NativeModules} from 'react-native';
+import {NavigationContainer} from '@react-navigation/native';
 
 const {AppLockModule} = NativeModules;
 
@@ -28,12 +29,17 @@ export default function App() {
   const [isLockScreenMode, setIsLockScreenMode] = useState(false);
   const [pendingLockedApp, setPendingLockedApp] = useState(null);
 
+  // Create a navigation reference
+  const navigationRef = useRef();
+
+  const handleForgotPin = () => {
+    // Use the navigation ref to navigate
+    navigationRef.current?.navigate('ForgotPin');
+  };
+
   useEffect(() => {
     console.log('🚀 App component mounted');
-
-    // Check if we're starting in lock screen mode
     checkLockScreenMode();
-
     return () => {
       // Cleanup if needed
     };
@@ -43,7 +49,6 @@ export default function App() {
     try {
       console.log('🔍 Checking if app started in lock screen mode...');
 
-      // Check if there's a pending locked app
       if (
         AppLockModule &&
         typeof AppLockModule.getPendingLockedApp === 'function'
@@ -55,7 +60,6 @@ export default function App() {
             '🚨 App started in lock screen mode for:',
             pendingApp.packageName,
           );
-          // Skip splash screen and go directly to lock screen
           setIsLockScreenMode(true);
           setPendingLockedApp(pendingApp);
           setIsSplashVisible(false);
@@ -63,7 +67,6 @@ export default function App() {
         }
       }
 
-      // No pending locked app, show splash screen normally
       console.log('📭 App started in normal mode, showing splash screen');
       const timer = setTimeout(() => {
         setIsSplashVisible(false);
@@ -72,11 +75,9 @@ export default function App() {
       return () => clearTimeout(timer);
     } catch (error) {
       console.error('❌ Error checking lock screen mode:', error);
-      // On error, show splash screen normally
       const timer = setTimeout(() => {
         setIsSplashVisible(false);
       }, 2000);
-
       return () => clearTimeout(timer);
     }
   };
@@ -93,11 +94,14 @@ export default function App() {
       <GestureHandlerRootView style={styles.container}>
         <PaperProvider theme={theme}>
           <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-          <LockScreenManager
-            initialLockedApp={pendingLockedApp}
-            forceLockScreen={true}>
-            <AppNavigator />
-          </LockScreenManager>
+          <NavigationContainer ref={navigationRef}>
+            <LockScreenManager
+              initialLockedApp={pendingLockedApp}
+              forceLockScreen={true}
+              onForgotPin={handleForgotPin}>
+              <AppNavigator />
+            </LockScreenManager>
+          </NavigationContainer>
         </PaperProvider>
       </GestureHandlerRootView>
     );
@@ -120,9 +124,11 @@ export default function App() {
     <GestureHandlerRootView style={styles.container}>
       <PaperProvider theme={theme}>
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-        <LockScreenManager>
-          <AppNavigator />
-        </LockScreenManager>
+        <NavigationContainer ref={navigationRef}>
+          <LockScreenManager onForgotPin={handleForgotPin}>
+            <AppNavigator />
+          </LockScreenManager>
+        </NavigationContainer>
       </PaperProvider>
     </GestureHandlerRootView>
   );

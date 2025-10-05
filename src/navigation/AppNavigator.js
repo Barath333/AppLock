@@ -1,5 +1,4 @@
 import React, {useState, useEffect} from 'react';
-import {NavigationContainer} from '@react-navigation/native';
 import {createStackNavigator} from '@react-navigation/stack';
 import {createDrawerNavigator} from '@react-navigation/drawer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -12,7 +11,7 @@ import HomeScreen from '../screens/HomeScreen';
 import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 import SecurityQuestionScreen from '../screens/SecurityQuestionScreen';
 import AboutScreen from '../screens/AboutScreen';
-import LockScreen from '../components/LockScreen';
+import ForgotPinScreen from '../screens/ForgotPinScreen'; // Add this import
 
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -85,60 +84,68 @@ function AppNavigator() {
     return null;
   }
 
+  // REMOVED NavigationContainer - just return Stack.Navigator directly
   return (
-    <NavigationContainer>
-      <Stack.Navigator
-        initialRouteName={initialRoute}
-        screenOptions={{
-          headerShown: false,
-          // Prevent any animations that might show the home screen briefly
+    <Stack.Navigator
+      initialRouteName={initialRoute}
+      screenOptions={{
+        headerShown: false,
+        // Prevent any animations that might show the home screen briefly
+        animationEnabled: false,
+        gestureEnabled: false,
+      }}>
+      <Stack.Screen
+        name="PermissionGranting"
+        component={PermissionGrantingScreen}
+      />
+      <Stack.Screen name="Setup" component={SetupScreen} />
+      <Stack.Screen
+        name="Main"
+        component={MainDrawer}
+        options={{
+          // Disable all animations and gestures for the main screen
           animationEnabled: false,
           gestureEnabled: false,
-        }}>
-        <Stack.Screen
-          name="PermissionGranting"
-          component={PermissionGrantingScreen}
-        />
-        <Stack.Screen name="Setup" component={SetupScreen} />
-        <Stack.Screen name="Lock" component={LockScreen} />
-        <Stack.Screen
-          name="Main"
-          component={MainDrawer}
-          options={{
-            // Disable all animations and gestures for the main screen
-            animationEnabled: false,
-            gestureEnabled: false,
-          }}
-        />
-        <Stack.Screen
-          name="ChangePassword"
-          component={ChangePasswordScreen}
-          options={{
-            headerShown: true,
-            title: 'Change Password',
-            animationEnabled: true,
-          }}
-        />
-        <Stack.Screen
-          name="SecurityQuestion"
-          component={SecurityQuestionScreen}
-          options={{
-            headerShown: true,
-            title: 'Security Question',
-            animationEnabled: true,
-          }}
-        />
-        <Stack.Screen
-          name="About"
-          component={AboutScreen}
-          options={{
-            headerShown: true,
-            title: 'About',
-            animationEnabled: true,
-          }}
-        />
-      </Stack.Navigator>
-    </NavigationContainer>
+        }}
+      />
+      <Stack.Screen
+        name="ChangePassword"
+        component={ChangePasswordScreen}
+        options={{
+          headerShown: true,
+          title: 'Change Password',
+          animationEnabled: true,
+        }}
+      />
+      <Stack.Screen
+        name="SecurityQuestion"
+        component={SecurityQuestionScreen}
+        options={{
+          headerShown: true,
+          title: 'Security Question',
+          animationEnabled: true,
+        }}
+      />
+      <Stack.Screen
+        name="About"
+        component={AboutScreen}
+        options={{
+          headerShown: true,
+          title: 'About',
+          animationEnabled: true,
+        }}
+      />
+      {/* Add ForgotPin screen */}
+      <Stack.Screen
+        name="ForgotPin"
+        component={ForgotPinScreen}
+        options={{
+          headerShown: true,
+          title: 'Forgot PIN',
+          animationEnabled: true,
+        }}
+      />
+    </Stack.Navigator>
   );
 }
 
