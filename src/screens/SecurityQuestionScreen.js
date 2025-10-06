@@ -2,10 +2,12 @@ import React, {useState, useEffect} from 'react';
 import {View, Text, StyleSheet, ScrollView, Alert} from 'react-native';
 import {TextInput, Button, Card, RadioButton} from 'react-native-paper';
 import {useNavigation} from '@react-navigation/native';
+import {useTranslation} from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SecurityQuestionScreen = () => {
   const navigation = useNavigation();
+  const {t} = useTranslation();
   const [selectedQuestion, setSelectedQuestion] = useState('');
   const [customQuestion, setCustomQuestion] = useState('');
   const [answer, setAnswer] = useState('');
@@ -13,13 +15,13 @@ const SecurityQuestionScreen = () => {
   const [existingQuestion, setExistingQuestion] = useState(null);
 
   const securityQuestions = [
-    "What was your first pet's name?",
-    'What was the name of your elementary school?',
-    "What is your mother's maiden name?",
-    'What city were you born in?',
-    'What was your childhood nickname?',
-    'What is your favorite movie?',
-    'Custom question (enter below)',
+    t('security_question.pet_name'),
+    t('security_question.elementary_school'),
+    t('security_question.mother_maiden'),
+    t('security_question.birth_city'),
+    t('security_question.childhood_nickname'),
+    t('security_question.favorite_movie'),
+    t('security_question.custom_question'),
   ];
 
   useEffect(() => {
@@ -38,9 +40,8 @@ const SecurityQuestionScreen = () => {
         });
         setSelectedQuestion(savedQuestion);
 
-        // If it's a custom question, mark it as custom
         if (!securityQuestions.includes(savedQuestion)) {
-          setSelectedQuestion('Custom question (enter below)');
+          setSelectedQuestion(t('security_question.custom_question'));
           setCustomQuestion(savedQuestion);
         }
       }
@@ -51,21 +52,21 @@ const SecurityQuestionScreen = () => {
 
   const handleSave = async () => {
     if (!selectedQuestion) {
-      Alert.alert('Error', 'Please select a security question');
+      Alert.alert(t('alerts.error'), t('errors.select_question'));
       return;
     }
 
     let questionToSave = selectedQuestion;
-    if (selectedQuestion === 'Custom question (enter below)') {
+    if (selectedQuestion === t('security_question.custom_question')) {
       if (!customQuestion.trim()) {
-        Alert.alert('Error', 'Please enter your custom question');
+        Alert.alert(t('alerts.error'), t('errors.enter_custom_question'));
         return;
       }
       questionToSave = customQuestion.trim();
     }
 
     if (!answer.trim()) {
-      Alert.alert('Error', 'Please enter your answer');
+      Alert.alert(t('alerts.error'), t('errors.enter_answer'));
       return;
     }
 
@@ -78,15 +79,15 @@ const SecurityQuestionScreen = () => {
         answer.trim().toLowerCase(),
       );
 
-      Alert.alert('Success', 'Security question has been set up successfully', [
+      Alert.alert(t('alerts.success'), t('security_question.save_success'), [
         {
-          text: 'OK',
+          text: t('common.ok'),
           onPress: () => navigation.goBack(),
         },
       ]);
     } catch (error) {
       console.error('Error saving security question:', error);
-      Alert.alert('Error', 'Failed to save security question');
+      Alert.alert(t('alerts.error'), t('errors.save_failed'));
     } finally {
       setIsLoading(false);
     }
@@ -94,15 +95,15 @@ const SecurityQuestionScreen = () => {
 
   const handleClear = async () => {
     Alert.alert(
-      'Clear Security Question',
-      'Are you sure you want to clear your security question?',
+      t('security_question.clear_title'),
+      t('security_question.clear_confirm'),
       [
         {
-          text: 'Cancel',
+          text: t('common.cancel'),
           style: 'cancel',
         },
         {
-          text: 'Clear',
+          text: t('security_question.clear_button'),
           onPress: async () => {
             try {
               await AsyncStorage.removeItem('security_question');
@@ -111,10 +112,13 @@ const SecurityQuestionScreen = () => {
               setSelectedQuestion('');
               setCustomQuestion('');
               setAnswer('');
-              Alert.alert('Success', 'Security question has been cleared');
+              Alert.alert(
+                t('alerts.success'),
+                t('security_question.clear_success'),
+              );
             } catch (error) {
               console.error('Error clearing security question:', error);
-              Alert.alert('Error', 'Failed to clear security question');
+              Alert.alert(t('alerts.error'), t('errors.clear_failed'));
             }
           },
           style: 'destructive',
@@ -127,21 +131,23 @@ const SecurityQuestionScreen = () => {
     <ScrollView style={styles.container}>
       <Card style={styles.card}>
         <Card.Content>
-          <Text style={styles.title}>Security Question</Text>
-          <Text style={styles.subtitle}>
-            Set up a security question to recover your PIN if you forget it
-          </Text>
+          <Text style={styles.title}>{t('security_question.title')}</Text>
+          <Text style={styles.subtitle}>{t('security_question.subtitle')}</Text>
 
           {existingQuestion && (
             <View style={styles.existingContainer}>
-              <Text style={styles.existingTitle}>Current Question:</Text>
+              <Text style={styles.existingTitle}>
+                {t('security_question.current_question')}
+              </Text>
               <Text style={styles.existingQuestion}>
                 {existingQuestion.question}
               </Text>
             </View>
           )}
 
-          <Text style={styles.sectionTitle}>Select a Security Question</Text>
+          <Text style={styles.sectionTitle}>
+            {t('security_question.select_question')}
+          </Text>
 
           <RadioButton.Group
             onValueChange={setSelectedQuestion}
@@ -154,24 +160,24 @@ const SecurityQuestionScreen = () => {
             ))}
           </RadioButton.Group>
 
-          {selectedQuestion === 'Custom question (enter below)' && (
+          {selectedQuestion === t('security_question.custom_question') && (
             <TextInput
-              label="Your Custom Question"
+              label={t('security_question.custom_label')}
               value={customQuestion}
               onChangeText={setCustomQuestion}
               style={styles.input}
               mode="outlined"
-              placeholder="Enter your custom security question"
+              placeholder={t('security_question.custom_placeholder')}
             />
           )}
 
           <TextInput
-            label="Your Answer"
+            label={t('security_question.your_answer')}
             value={answer}
             onChangeText={setAnswer}
             style={styles.input}
             mode="outlined"
-            placeholder="Enter your answer"
+            placeholder={t('security_question.answer_placeholder')}
             secureTextEntry
           />
 
@@ -182,8 +188,8 @@ const SecurityQuestionScreen = () => {
             loading={isLoading}
             disabled={isLoading}>
             {existingQuestion
-              ? 'Update Security Question'
-              : 'Save Security Question'}
+              ? t('security_question.update_question')
+              : t('security_question.save_question')}
           </Button>
 
           {existingQuestion && (
@@ -192,7 +198,7 @@ const SecurityQuestionScreen = () => {
               onPress={handleClear}
               style={styles.clearButton}
               textColor="#FF3B30">
-              Clear Security Question
+              {t('security_question.clear_question')}
             </Button>
           )}
         </Card.Content>

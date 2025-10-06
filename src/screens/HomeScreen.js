@@ -14,19 +14,20 @@ import {
 } from 'react-native';
 import {Searchbar, Appbar, Card} from 'react-native-paper';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
+import {useTranslation} from 'react-i18next';
 import {NativeModules} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const {AppListModule, AppLockModule} = NativeModules;
 const {width} = Dimensions.get('window');
 
-// Ignore event emitter warnings
 LogBox.ignoreLogs(['new NativeEventEmitter']);
 
 const OUR_APP_PACKAGE = 'com.applock';
 
 const HomeScreen = () => {
   const navigation = useNavigation();
+  const {t} = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [apps, setApps] = useState([]);
   const [filteredApps, setFilteredApps] = useState([]);
@@ -100,7 +101,6 @@ const HomeScreen = () => {
       console.log('🔒 Final locked apps set:', Array.from(lockedSet));
       setLockedApps(lockedSet);
 
-      // Update apps with correct lock status
       if (apps.length > 0) {
         const updatedApps = apps.map(app => ({
           ...app,
@@ -110,7 +110,6 @@ const HomeScreen = () => {
         setFilteredApps(updatedApps);
       }
 
-      // Update native module
       const packageNamesArray = Array.from(lockedSet);
       if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
         await AppLockModule.setLockedApps(packageNamesArray);
@@ -132,7 +131,6 @@ const HomeScreen = () => {
         await AppLockModule.setLockedApps(filteredApps);
       }
 
-      // Update local state immediately
       setLockedApps(new Set(filteredApps));
     } catch (error) {
       console.error('❌ Error saving locked apps:', error);
@@ -145,7 +143,6 @@ const HomeScreen = () => {
       const installedApps = await AppListModule.getInstalledApps();
       console.log(`📱 Loaded ${installedApps.length} apps`);
 
-      // Get current locked apps to set correct initial state
       const currentLockedApps = await AsyncStorage.getItem('lockedApps');
       const lockedSet = new Set();
 
@@ -199,10 +196,7 @@ const HomeScreen = () => {
 
   const toggleAppLock = async (appId, appPackageName, appName) => {
     if (appPackageName === OUR_APP_PACKAGE) {
-      Alert.alert(
-        'Cannot Lock',
-        'You cannot lock the App Lock application itself.',
-      );
+      Alert.alert(t('alerts.cannot_lock'), t('home.cannot_lock_self'));
       return;
     }
 
@@ -234,7 +228,6 @@ const HomeScreen = () => {
       console.log(`🔒 Locked: ${appPackageName}`);
     }
 
-    // Update UI immediately
     const updatedApps = apps.map(app =>
       app.id === appId
         ? {...app, locked: newLockedApps.has(app.packageName)}
@@ -243,7 +236,6 @@ const HomeScreen = () => {
     setApps(updatedApps);
     setLockedApps(newLockedApps);
 
-    // Save to storage
     await saveLockedApps(newLockedApps);
   };
 
@@ -264,7 +256,9 @@ const HomeScreen = () => {
           <Text style={styles.packageName} numberOfLines={1}>
             {item.packageName}
           </Text>
-          {item.locked && <Text style={styles.lockedBadge}>🔒 Locked</Text>}
+          {item.locked && (
+            <Text style={styles.lockedBadge}>🔒 {t('home.app_locked')}</Text>
+          )}
         </View>
       </View>
       <Switch
@@ -283,7 +277,10 @@ const HomeScreen = () => {
   return (
     <View style={styles.container}>
       <Appbar.Header style={styles.header}>
-        <Appbar.Content title="App Lock" titleStyle={styles.headerTitle} />
+        <Appbar.Content
+          title={t('home.title')}
+          titleStyle={styles.headerTitle}
+        />
         <Appbar.Action
           icon="cog"
           onPress={() => {
@@ -309,30 +306,23 @@ const HomeScreen = () => {
             <View style={styles.statsContainer}>
               <View style={styles.statItem}>
                 <Text style={styles.statNumber}>{lockedAppsCount}</Text>
-                <Text style={styles.statLabel}>Locked</Text>
+                <Text style={styles.statLabel}>{t('home.locked_apps')}</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
                 <Text style={styles.statNumber}>{apps.length}</Text>
-                <Text style={styles.statLabel}>Total</Text>
+                <Text style={styles.statLabel}>{t('home.total_apps')}</Text>
               </View>
             </View>
           </Card.Content>
         </Card>
 
         <View style={styles.infoBox}>
-          <Text style={styles.infoText}>
-            💡 <Text style={styles.infoBold}>Testing Instructions:</Text>
-            {'\n'}
-            1. Lock an app below{'\n'}
-            2. Go to home screen{'\n'}
-            3. Open the locked app{'\n'}
-            4. Lock screen should appear
-          </Text>
+          <Text style={styles.infoText}>{t('home.testing_instructions')}</Text>
         </View>
 
         <Searchbar
-          placeholder="Search apps"
+          placeholder={t('home.search_placeholder')}
           onChangeText={setSearchQuery}
           value={searchQuery}
           style={styles.searchBar}
@@ -349,7 +339,7 @@ const HomeScreen = () => {
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No apps found or loading...</Text>
+              <Text style={styles.emptyText}>{t('home.no_apps_found')}</Text>
             </View>
           }
         />
@@ -402,9 +392,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1565C0',
     lineHeight: 20,
-  },
-  infoBold: {
-    fontWeight: 'bold',
   },
   statsContainer: {
     flexDirection: 'row',

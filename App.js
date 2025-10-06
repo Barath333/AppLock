@@ -16,6 +16,10 @@ import {
   checkAppTampering,
 } from './src/utils/securityUtils';
 
+// Import i18n and LanguageProvider
+import './src/i18n/index';
+import {LanguageProvider} from './src/contexts/LanguageContext';
+
 const {AppLockModule} = NativeModules;
 
 const theme = {
@@ -76,7 +80,6 @@ export default function App() {
       if (warnings.length > 0) {
         setSecurityWarning(warnings.join('\n• '));
 
-        // Show alert for serious security issues
         if (deviceSecurity.isRooted || deviceSecurity.isJailBroken) {
           Alert.alert(
             'Security Warning',
@@ -149,17 +152,19 @@ export default function App() {
     console.log('🔒 Rendering in lock screen mode (no splash)');
     return (
       <GestureHandlerRootView style={styles.container}>
-        <PaperProvider theme={theme}>
-          <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-          <NavigationContainer ref={navigationRef}>
-            <LockScreenManager
-              initialLockedApp={pendingLockedApp}
-              forceLockScreen={true}
-              onForgotPin={handleForgotPin}>
-              <AppNavigator />
-            </LockScreenManager>
-          </NavigationContainer>
-        </PaperProvider>
+        <LanguageProvider>
+          <PaperProvider theme={theme}>
+            <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+            <NavigationContainer ref={navigationRef}>
+              <LockScreenManager
+                initialLockedApp={pendingLockedApp}
+                forceLockScreen={true}
+                onForgotPin={handleForgotPin}>
+                <AppNavigator />
+              </LockScreenManager>
+            </NavigationContainer>
+          </PaperProvider>
+        </LanguageProvider>
       </GestureHandlerRootView>
     );
   }
@@ -179,19 +184,23 @@ export default function App() {
   console.log('🏠 Rendering main app after splash');
   return (
     <GestureHandlerRootView style={styles.container}>
-      <PaperProvider theme={theme}>
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-        {securityWarning && (
-          <View style={styles.securityWarning}>
-            <Text style={styles.securityWarningText}>⚠️ {securityWarning}</Text>
-          </View>
-        )}
-        <NavigationContainer ref={navigationRef}>
-          <LockScreenManager onForgotPin={handleForgotPin}>
-            <AppNavigator />
-          </LockScreenManager>
-        </NavigationContainer>
-      </PaperProvider>
+      <LanguageProvider>
+        <PaperProvider theme={theme}>
+          <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+          {securityWarning && (
+            <View style={styles.securityWarning}>
+              <Text style={styles.securityWarningText}>
+                ⚠️ {securityWarning}
+              </Text>
+            </View>
+          )}
+          <NavigationContainer ref={navigationRef}>
+            <LockScreenManager onForgotPin={handleForgotPin}>
+              <AppNavigator />
+            </LockScreenManager>
+          </NavigationContainer>
+        </PaperProvider>
+      </LanguageProvider>
     </GestureHandlerRootView>
   );
 }

@@ -11,7 +11,8 @@ import HomeScreen from '../screens/HomeScreen';
 import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 import SecurityQuestionScreen from '../screens/SecurityQuestionScreen';
 import AboutScreen from '../screens/AboutScreen';
-import ForgotPinScreen from '../screens/ForgotPinScreen'; // Add this import
+import ForgotPinScreen from '../screens/ForgotPinScreen';
+import LanguageScreen from '../screens/LanguageScreen'; // Add this import
 
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -47,7 +48,6 @@ function AppNavigator() {
     try {
       console.log('🔍 Checking setup status...');
 
-      // Check if setup is completed
       const setupCompleted = await AsyncStorage.getItem('setupCompleted');
       const hasPIN = await checkIfPINExists();
 
@@ -71,7 +71,6 @@ function AppNavigator() {
   const checkIfPINExists = async () => {
     try {
       const {AppLockModule} = require('react-native').NativeModules;
-      // Try to get locked apps - if this works, the app is probably set up
       const lockedApps = await AppLockModule.getLockedApps();
       return Array.isArray(lockedApps);
     } catch (error) {
@@ -80,17 +79,14 @@ function AppNavigator() {
   };
 
   if (isLoading || initialRoute === null) {
-    // Return a minimal loading view or null
     return null;
   }
 
-  // REMOVED NavigationContainer - just return Stack.Navigator directly
   return (
     <Stack.Navigator
       initialRouteName={initialRoute}
       screenOptions={{
         headerShown: false,
-        // Prevent any animations that might show the home screen briefly
         animationEnabled: false,
         gestureEnabled: false,
       }}>
@@ -103,7 +99,6 @@ function AppNavigator() {
         name="Main"
         component={MainDrawer}
         options={{
-          // Disable all animations and gestures for the main screen
           animationEnabled: false,
           gestureEnabled: false,
         }}
@@ -135,13 +130,22 @@ function AppNavigator() {
           animationEnabled: true,
         }}
       />
-      {/* Add ForgotPin screen */}
       <Stack.Screen
         name="ForgotPin"
         component={ForgotPinScreen}
         options={{
           headerShown: true,
           title: 'Forgot PIN',
+          animationEnabled: true,
+        }}
+      />
+      {/* Add Language Screen */}
+      <Stack.Screen
+        name="Language"
+        component={LanguageScreen}
+        options={{
+          headerShown: true,
+          title: 'Language',
           animationEnabled: true,
         }}
       />

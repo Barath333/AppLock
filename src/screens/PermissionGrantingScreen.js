@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import {Button, Card} from 'react-native-paper';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
+import {useTranslation} from 'react-i18next';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {NativeModules} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -19,6 +20,7 @@ const {PermissionModule} = NativeModules;
 
 const PermissionGrantingScreen = () => {
   const navigation = useNavigation();
+  const {t} = useTranslation();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
 
@@ -43,12 +45,10 @@ const PermissionGrantingScreen = () => {
       }
     });
 
-    // Listen for accessibility service events
     const accessibilitySubscription = eventEmitter.addListener(
       'onAppOpened',
       data => {
         console.log('App opened:', data.packageName);
-        // You can handle app opening events here
       },
     );
 
@@ -94,12 +94,11 @@ const PermissionGrantingScreen = () => {
     try {
       PermissionModule.openAccessibilitySettings();
 
-      // Check status again after a delay
       setTimeout(() => {
         checkAllPermissions();
       }, 1000);
     } catch (error) {
-      Alert.alert('Error', 'Could not open accessibility settings');
+      Alert.alert(t('alerts.error'), t('errors.accessibility_settings'));
     }
   };
 
@@ -107,12 +106,11 @@ const PermissionGrantingScreen = () => {
     try {
       PermissionModule.openOverlayPermissionSettings();
 
-      // Check status again after a delay
       setTimeout(() => {
         checkAllPermissions();
       }, 1000);
     } catch (error) {
-      Alert.alert('Error', 'Could not request overlay permission');
+      Alert.alert(t('alerts.error'), t('errors.overlay_permission'));
     }
   };
 
@@ -120,18 +118,16 @@ const PermissionGrantingScreen = () => {
     try {
       PermissionModule.openUsageAccessSettings();
 
-      // Check status again after a delay
       setTimeout(() => {
         checkAllPermissions();
       }, 1000);
     } catch (error) {
-      Alert.alert('Error', 'Could not open usage access settings');
+      Alert.alert(t('alerts.error'), t('errors.usage_access'));
     }
   };
 
   const arePermissionsGranted = async () => {
     try {
-      // Check if setup is already completed
       const setupCompleted = await AsyncStorage.getItem('setupCompleted');
 
       if (setupCompleted === 'true') {
@@ -149,8 +145,8 @@ const PermissionGrantingScreen = () => {
 
   const getButtonLabel = permissionName => {
     return permissions[permissionName]
-      ? 'Permission Granted'
-      : 'Grant Permission';
+      ? t('permissions.permission_granted')
+      : t('permissions.grant_permission');
   };
 
   return (
@@ -163,10 +159,8 @@ const PermissionGrantingScreen = () => {
           <View style={styles.iconContainer}>
             <Icon name="shield-lock" size={60} color="#FFFFFF" />
           </View>
-          <Text style={styles.title}>App Lock</Text>
-          <Text style={styles.subtitle}>
-            We need some permissions to protect your apps
-          </Text>
+          <Text style={styles.title}>{t('permissions.title')}</Text>
+          <Text style={styles.subtitle}>{t('permissions.subtitle')}</Text>
         </View>
 
         <Card style={styles.permissionCard}>
@@ -185,13 +179,15 @@ const PermissionGrantingScreen = () => {
               </View>
               <View style={styles.permissionText}>
                 <Text style={styles.permissionTitle}>
-                  Accessibility Service
+                  {t('permissions.accessibility_title')}
                 </Text>
                 <Text style={styles.permissionDesc}>
-                  Required to detect when apps are launched and lock them
+                  {t('permissions.accessibility_desc')}
                 </Text>
                 {permissions.accessibility && (
-                  <Text style={styles.grantedText}>Service enabled</Text>
+                  <Text style={styles.grantedText}>
+                    {t('permissions.accessibility_granted')}
+                  </Text>
                 )}
               </View>
             </View>
@@ -225,13 +221,15 @@ const PermissionGrantingScreen = () => {
               </View>
               <View style={styles.permissionText}>
                 <Text style={styles.permissionTitle}>
-                  Display Over Other Apps
+                  {t('permissions.overlay_title')}
                 </Text>
                 <Text style={styles.permissionDesc}>
-                  Required to show the lock screen over other applications
+                  {t('permissions.overlay_desc')}
                 </Text>
                 {permissions.overlay && (
-                  <Text style={styles.grantedText}>Permission granted</Text>
+                  <Text style={styles.grantedText}>
+                    {t('permissions.overlay_granted')}
+                  </Text>
                 )}
               </View>
             </View>
@@ -264,12 +262,16 @@ const PermissionGrantingScreen = () => {
                 />
               </View>
               <View style={styles.permissionText}>
-                <Text style={styles.permissionTitle}>Usage Access</Text>
+                <Text style={styles.permissionTitle}>
+                  {t('permissions.usage_title')}
+                </Text>
                 <Text style={styles.permissionDesc}>
-                  Required to see which apps are installed and running
+                  {t('permissions.usage_desc')}
                 </Text>
                 {permissions.usage && (
-                  <Text style={styles.grantedText}>Permission granted</Text>
+                  <Text style={styles.grantedText}>
+                    {t('permissions.usage_granted')}
+                  </Text>
                 )}
               </View>
             </View>
@@ -289,13 +291,11 @@ const PermissionGrantingScreen = () => {
           onPress={arePermissionsGranted}
           style={styles.continueButton}
           labelStyle={styles.continueButtonLabel}>
-          Continue
+          {t('common.continue')}
         </Button>
 
         <View style={styles.infoContainer}>
-          <Text style={styles.infoText}>
-            Note: After granting permissions, return to this screen to continue.
-          </Text>
+          <Text style={styles.infoText}>{t('permissions.note')}</Text>
         </View>
       </Animated.View>
     </ScrollView>

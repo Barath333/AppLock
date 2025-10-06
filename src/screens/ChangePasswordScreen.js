@@ -2,11 +2,13 @@ import React, {useState} from 'react';
 import {View, Text, StyleSheet, ScrollView, Alert} from 'react-native';
 import {TextInput, Button, Card} from 'react-native-paper';
 import {useNavigation} from '@react-navigation/native';
+import {useTranslation} from 'react-i18next';
 import * as Keychain from 'react-native-keychain';
 import {validatePINStrength} from '../utils/securityUtils';
 
 const ChangePasswordScreen = () => {
   const navigation = useNavigation();
+  const {t} = useTranslation();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -28,61 +30,57 @@ const ChangePasswordScreen = () => {
 
   const handleChangePassword = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
-      Alert.alert('Error', 'Please fill in all fields');
+      Alert.alert(t('alerts.error'), t('errors.fill_all_fields'));
       return;
     }
 
     if (newPassword.length < 4) {
-      Alert.alert('Error', 'New PIN must be at least 4 digits');
+      Alert.alert(t('alerts.error'), t('errors.pin_too_short'));
       return;
     }
 
-    // Check PIN strength
     const strengthCheck = validatePINStrength(newPassword);
     if (!strengthCheck.valid) {
-      Alert.alert('Weak PIN', strengthCheck.message);
+      Alert.alert(t('setup.weak_pin'), strengthCheck.message);
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      Alert.alert('Error', 'New PINs do not match');
+      Alert.alert(t('alerts.error'), t('errors.pins_not_match'));
       return;
     }
 
     setIsLoading(true);
 
     try {
-      // Verify current password
       const credentials = await Keychain.getGenericPassword({
         service: 'applock_service',
       });
 
       if (!credentials || credentials.password !== currentPassword) {
-        Alert.alert('Error', 'Current PIN is incorrect');
+        Alert.alert(t('alerts.error'), t('errors.invalid_current_pin'));
         setIsLoading(false);
         return;
       }
 
-      // Update to new password
       await Keychain.setGenericPassword('applock_user', newPassword, {
         service: 'applock_service',
         accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
       });
 
-      Alert.alert('Success', 'PIN has been changed successfully', [
+      Alert.alert(t('alerts.success'), t('change_password.pin_changed'), [
         {
-          text: 'OK',
+          text: t('common.ok'),
           onPress: () => navigation.goBack(),
         },
       ]);
 
-      // Clear form
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
     } catch (error) {
       console.error('Error changing password:', error);
-      Alert.alert('Error', 'Failed to change PIN');
+      Alert.alert(t('alerts.error'), t('errors.change_failed'));
     } finally {
       setIsLoading(false);
     }
@@ -92,13 +90,11 @@ const ChangePasswordScreen = () => {
     <ScrollView style={styles.container}>
       <Card style={styles.card}>
         <Card.Content>
-          <Text style={styles.title}>Change Master PIN</Text>
-          <Text style={styles.subtitle}>
-            Update your security PIN to keep your apps protected
-          </Text>
+          <Text style={styles.title}>{t('change_password.title')}</Text>
+          <Text style={styles.subtitle}>{t('change_password.subtitle')}</Text>
 
           <TextInput
-            label="Current PIN"
+            label={t('change_password.current_pin')}
             value={currentPassword}
             onChangeText={setCurrentPassword}
             secureTextEntry={!showCurrentPassword}
@@ -116,7 +112,7 @@ const ChangePasswordScreen = () => {
           />
 
           <TextInput
-            label="New PIN (4-6 digits)"
+            label={t('change_password.new_pin')}
             value={newPassword}
             onChangeText={handleNewPinChange}
             secureTextEntry={!showNewPassword}
@@ -140,7 +136,7 @@ const ChangePasswordScreen = () => {
           )}
 
           <TextInput
-            label="Confirm New PIN"
+            label={t('change_password.confirm_new_pin')}
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             secureTextEntry={!showConfirmPassword}
@@ -163,17 +159,17 @@ const ChangePasswordScreen = () => {
             style={styles.button}
             loading={isLoading}
             disabled={isLoading || !pinStrength.valid}>
-            Change PIN
+            {t('change_password.change_pin')}
           </Button>
 
           <View style={styles.tipsContainer}>
-            <Text style={styles.tipsTitle}>PIN Security Tips:</Text>
-            <Text style={styles.tip}>• Use at least 4 digits</Text>
-            <Text style={styles.tip}>• Avoid simple patterns like 1234</Text>
-            <Text style={styles.tip}>• Don't use sequential numbers</Text>
-            <Text style={styles.tip}>• Avoid repeated digits</Text>
-            <Text style={styles.tip}>• Don't use your birth date</Text>
-            <Text style={styles.tip}>• Change your PIN regularly</Text>
+            <Text style={styles.tipsTitle}>{t('setup.security_tips')}</Text>
+            <Text style={styles.tip}>• {t('setup.tip_1')}</Text>
+            <Text style={styles.tip}>• {t('setup.tip_2')}</Text>
+            <Text style={styles.tip}>• {t('setup.tip_3')}</Text>
+            <Text style={styles.tip}>• {t('setup.tip_4')}</Text>
+            <Text style={styles.tip}>• {t('setup.tip_5')}</Text>
+            <Text style={styles.tip}>• {t('change_password.tip_6')}</Text>
           </View>
         </Card.Content>
       </Card>

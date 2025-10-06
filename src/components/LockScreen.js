@@ -18,6 +18,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import * as Keychain from 'react-native-keychain';
 import {BannerAd, BannerAdSize, TestIds} from 'react-native-google-mobile-ads';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {useTranslation} from 'react-i18next';
 
 const {AppLockModule} = NativeModules;
 
@@ -28,6 +29,7 @@ const adUnitId = __DEV__
 const {width, height} = Dimensions.get('window');
 
 const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
+  const {t} = useTranslation();
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
   const [error, setError] = useState('');
@@ -59,7 +61,6 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
         if (Date.now() < lockTime) {
           setLockUntil(lockTime);
         } else {
-          // Reset if lock time has passed
           await resetFailedAttempts();
         }
       }
@@ -83,7 +84,7 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
     setFailedAttempts(newFailedAttempts);
 
     if (newFailedAttempts >= 5) {
-      const lockTime = Date.now() + 5 * 60 * 1000; // 5 minutes
+      const lockTime = Date.now() + 5 * 60 * 1000;
       setLockUntil(lockTime);
       try {
         await AsyncStorage.setItem(
@@ -107,17 +108,14 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
   };
 
   const handleUnlock = async () => {
-    // Check if temporarily locked
     if (lockUntil && Date.now() < lockUntil) {
       const remainingTime = Math.ceil((lockUntil - Date.now()) / 1000 / 60);
-      setError(
-        `Too many failed attempts. Try again in ${remainingTime} minutes`,
-      );
+      setError(t('lock_screen.too_many_attempts', {minutes: remainingTime}));
       return;
     }
 
     if (pin.length < 4) {
-      setError('PIN must be at least 4 digits');
+      setError(t('errors.pin_too_short'));
       return;
     }
 
@@ -140,7 +138,6 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
         console.log('✅ PIN verified successfully');
         await resetFailedAttempts();
 
-        // Try to launch the original app
         if (appInfo?.packageName) {
           console.log(
             '🚀 Attempting to launch original app:',
@@ -168,13 +165,16 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
 
         const remainingAttempts = 5 - (failedAttempts + 1);
         if (remainingAttempts > 0) {
-          setError(`Invalid PIN. ${remainingAttempts} attempts remaining`);
+          setError(
+            t('lock_screen.invalid_pin') +
+              ' ' +
+              t('lock_screen.attempts_remaining', {count: remainingAttempts}),
+          );
         } else {
-          setError('Too many failed attempts. App locked for 5 minutes.');
+          setError(t('lock_screen.too_many_attempts', {minutes: 5}));
         }
 
         setPin('');
-        // Shake animation for wrong PIN
         Animated.sequence([
           Animated.timing(shakeAnim, {
             toValue: 10,
@@ -200,7 +200,7 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
       }
     } catch (error) {
       console.error('🔑 Keychain error:', error);
-      setError('Authentication error. Please try again.');
+      setError(t('errors.authentication_error'));
     } finally {
       setIsLoading(false);
     }
@@ -218,54 +218,50 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
         }
         onClose();
       } else {
-        Alert.alert(
-          'Reset PIN',
-          'This will reset your PIN and unlock all apps. You will need to set up a new PIN.',
-          [
-            {
-              text: 'Cancel',
-              style: 'cancel',
-            },
-            {
-              text: 'Reset',
-              onPress: async () => {
-                try {
-                  await Keychain.resetGenericPassword({
-                    service: 'applock_service',
-                  });
-                  await AsyncStorage.removeItem('lockedApps');
-                  if (
-                    AppLockModule &&
-                    typeof AppLockModule.setLockedApps === 'function'
-                  ) {
-                    await AppLockModule.setLockedApps([]);
-                  }
-                  await resetFailedAttempts();
-
-                  Alert.alert(
-                    'Success',
-                    'PIN has been reset. All apps are now unlocked.',
-                    [
-                      {
-                        text: 'OK',
-                        onPress: () => {
-                          onClose();
-                          if (onForgotPin) {
-                            onForgotPin();
-                          }
-                        },
-                      },
-                    ],
-                  );
-                } catch (error) {
-                  console.error('Error resetting PIN:', error);
-                  Alert.alert('Error', 'Failed to reset PIN');
+        Alert.alert(t('alerts.reset_pin'), t('forgot_pin.reset_warning'), [
+          {
+            text: t('common.cancel'),
+            style: 'cancel',
+          },
+          {
+            text: t('alerts.reset'),
+            onPress: async () => {
+              try {
+                await Keychain.resetGenericPassword({
+                  service: 'applock_service',
+                });
+                await AsyncStorage.removeItem('lockedApps');
+                if (
+                  AppLockModule &&
+                  typeof AppLockModule.setLockedApps === 'function'
+                ) {
+                  await AppLockModule.setLockedApps([]);
                 }
-              },
-              style: 'destructive',
+                await resetFailedAttempts();
+
+                Alert.alert(
+                  t('alerts.success'),
+                  t('forgot_pin.reset_success'),
+                  [
+                    {
+                      text: t('common.ok'),
+                      onPress: () => {
+                        onClose();
+                        if (onForgotPin) {
+                          onForgotPin();
+                        }
+                      },
+                    },
+                  ],
+                );
+              } catch (error) {
+                console.error('Error resetting PIN:', error);
+                Alert.alert(t('alerts.error'), t('errors.reset_failed'));
+              }
             },
-          ],
-        );
+            style: 'destructive',
+          },
+        ]);
       }
     } catch (error) {
       console.error('Error checking security question:', error);
@@ -324,15 +320,18 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
             </View>
           </Animated.View>
 
-          <Text style={styles.appName}>{appInfo.name} is locked</Text>
-          <Text style={styles.prompt}>Enter your PIN to unlock</Text>
+          <Text style={styles.appName}>
+            {appInfo.name} {t('lock_screen.app_locked')}
+          </Text>
+          <Text style={styles.prompt}>{t('lock_screen.enter_pin')}</Text>
 
           {lockUntil && Date.now() < lockUntil && (
             <View style={styles.lockWarning}>
               <Icon name="lock-alert" size={24} color="#FF9800" />
               <Text style={styles.lockWarningText}>
-                Too many failed attempts. Try again in{' '}
-                {Math.ceil((lockUntil - Date.now()) / 1000 / 60)} minutes.
+                {t('lock_screen.too_many_attempts', {
+                  minutes: Math.ceil((lockUntil - Date.now()) / 1000 / 60),
+                })}
               </Text>
             </View>
           )}
@@ -359,6 +358,7 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
                 colors: {primary: '#1E88E5', text: '#333', placeholder: '#888'},
               }}
               editable={!lockUntil || Date.now() >= lockUntil}
+              placeholder={t('setup.enter_pin')}
               right={
                 <TextInput.Icon
                   icon={showPin ? 'eye-off' : 'eye'}
@@ -382,7 +382,7 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
             }
             loading={isLoading}
             labelStyle={styles.unlockButtonLabel}>
-            Unlock
+            {t('lock_screen.unlock')}
           </Button>
 
           <Button
@@ -390,7 +390,7 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
             onPress={handleForgotPin}
             style={styles.forgotButton}
             labelStyle={styles.forgotButtonLabel}>
-            Forgot PIN?
+            {t('lock_screen.forgot_pin')}
           </Button>
         </View>
 
@@ -400,7 +400,9 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
         />
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>App Lock - Secure Your Privacy</Text>
+          <Text style={styles.footerText}>
+            {t('common.app_name')} - {t('splash.subtitle')}
+          </Text>
         </View>
       </View>
     </Modal>

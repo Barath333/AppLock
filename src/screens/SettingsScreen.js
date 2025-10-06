@@ -2,12 +2,18 @@ import React, {useState, useEffect} from 'react';
 import {View, Text, StyleSheet, ScrollView, Alert, Switch} from 'react-native';
 import {List, Button, Divider, Card} from 'react-native-paper';
 import {useNavigation} from '@react-navigation/native';
+import {useTranslation} from 'react-i18next';
+import {useLanguage} from '../contexts/LanguageContext';
 import * as Keychain from 'react-native-keychain';
 import * as Biometrics from 'react-native-biometrics';
 import {checkDeviceSecurity, checkAppTampering} from '../utils/securityUtils';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SettingsScreen = () => {
   const navigation = useNavigation();
+  const {t} = useTranslation();
+  const {currentLanguage, languages} = useLanguage();
+
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
   const [isPremium, setIsPremium] = useState(false);
   const [securityStatus, setSecurityStatus] = useState({
@@ -61,7 +67,7 @@ const SettingsScreen = () => {
 
         if (!available) {
           Alert.alert(
-            'Not Available',
+            t('alerts.error'),
             'Biometric authentication is not available on this device',
           );
           return;
@@ -74,13 +80,16 @@ const SettingsScreen = () => {
         if (success) {
           await AsyncStorage.setItem('biometrics_enabled', 'true');
           setBiometricsEnabled(true);
-          Alert.alert('Success', 'Biometric authentication enabled');
+          Alert.alert(t('alerts.success'), 'Biometric authentication enabled');
         } else {
-          Alert.alert('Error', 'Biometric authentication failed');
+          Alert.alert(t('alerts.error'), 'Biometric authentication failed');
         }
       } catch (error) {
         console.error('Error enabling biometrics:', error);
-        Alert.alert('Error', 'Failed to enable biometric authentication');
+        Alert.alert(
+          t('alerts.error'),
+          'Failed to enable biometric authentication',
+        );
       }
     } else {
       await AsyncStorage.setItem('biometrics_enabled', 'false');
@@ -96,27 +105,41 @@ const SettingsScreen = () => {
     navigation.navigate('SecurityQuestion');
   };
 
+  const handleLanguage = () => {
+    navigation.navigate('Language');
+  };
+
   const handleUpgradeToPremium = () => {
     navigation.navigate('Premium');
   };
 
   const handleContactSupport = () => {
-    Alert.alert('Contact Support', 'Support email: support@applock.com');
+    Alert.alert(
+      t('settings.contact_support'),
+      'Support email: support@applock.com',
+    );
   };
 
   const handleAbout = () => {
     navigation.navigate('About');
   };
 
+  const getCurrentLanguageName = () => {
+    const language = languages.find(lang => lang.code === currentLanguage);
+    return language ? language.nativeName : 'English';
+  };
+
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.title}>Settings</Text>
+      <Text style={styles.title}>{t('settings.title')}</Text>
 
       {/* Security Status Card */}
       <Card style={styles.securityCard}>
         <Card.Content>
           <View style={styles.securityHeader}>
-            <Text style={styles.securityTitle}>Security Status</Text>
+            <Text style={styles.securityTitle}>
+              {t('settings.security_status')}
+            </Text>
             <View
               style={[
                 styles.statusIndicator,
@@ -126,8 +149,8 @@ const SettingsScreen = () => {
               ]}>
               <Text style={styles.statusText}>
                 {securityStatus.deviceSecure && securityStatus.appSecure
-                  ? 'Secure'
-                  : 'Warning'}
+                  ? t('settings.secure')
+                  : t('settings.warning')}
               </Text>
             </View>
           </View>
@@ -150,15 +173,17 @@ const SettingsScreen = () => {
       </Card>
 
       <List.Section>
-        <List.Subheader style={styles.sectionHeader}>Security</List.Subheader>
+        <List.Subheader style={styles.sectionHeader}>
+          {t('settings.security')}
+        </List.Subheader>
         <List.Item
-          title="Change Master Password"
+          title={t('settings.change_password')}
           description="Update your security PIN"
           left={props => <List.Icon {...props} icon="lock" color="#1E88E5" />}
           onPress={handleChangePassword}
         />
         <List.Item
-          title="Biometric Authentication"
+          title={t('settings.biometric')}
           description="Use fingerprint to unlock apps"
           left={props => (
             <List.Icon {...props} icon="fingerprint" color="#1E88E5" />
@@ -173,19 +198,31 @@ const SettingsScreen = () => {
           )}
         />
         <List.Item
-          title="Security Question"
+          title={t('settings.security_question')}
           description="Set up PIN recovery question"
           left={props => (
             <List.Icon {...props} icon="help-circle" color="#1E88E5" />
           )}
           onPress={handleSecurityQuestion}
         />
+        <List.Item
+          title={t('settings.language')}
+          description={`${t(
+            'settings.current_language',
+          )}: ${getCurrentLanguageName()}`}
+          left={props => (
+            <List.Icon {...props} icon="translate" color="#1E88E5" />
+          )}
+          onPress={handleLanguage}
+        />
       </List.Section>
 
       <Divider style={styles.divider} />
 
       <List.Section>
-        <List.Subheader style={styles.sectionHeader}>Premium</List.Subheader>
+        <List.Subheader style={styles.sectionHeader}>
+          {t('settings.premium')}
+        </List.Subheader>
         <List.Item
           title={isPremium ? 'Premium Activated' : 'Upgrade to Premium'}
           description={
@@ -207,9 +244,11 @@ const SettingsScreen = () => {
       <Divider style={styles.divider} />
 
       <List.Section>
-        <List.Subheader style={styles.sectionHeader}>Support</List.Subheader>
+        <List.Subheader style={styles.sectionHeader}>
+          {t('settings.support')}
+        </List.Subheader>
         <List.Item
-          title="Contact Support"
+          title={t('settings.contact_support')}
           description="Get help with the app"
           left={props => (
             <List.Icon {...props} icon="headset" color="#1E88E5" />
@@ -217,7 +256,7 @@ const SettingsScreen = () => {
           onPress={handleContactSupport}
         />
         <List.Item
-          title="About"
+          title={t('settings.about')}
           description="App version and information"
           left={props => (
             <List.Icon {...props} icon="information" color="#1E88E5" />
@@ -227,7 +266,7 @@ const SettingsScreen = () => {
       </List.Section>
 
       <View style={styles.footer}>
-        <Text style={styles.version}>App Lock v1.0.0</Text>
+        <Text style={styles.version}>{t('common.app_name')} v1.0.0</Text>
       </View>
     </ScrollView>
   );

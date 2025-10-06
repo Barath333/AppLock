@@ -2,6 +2,7 @@ import React, {useState, useEffect} from 'react';
 import {View, Text, StyleSheet, ScrollView, Alert} from 'react-native';
 import {TextInput, Button, Card} from 'react-native-paper';
 import {useNavigation} from '@react-navigation/native';
+import {useTranslation} from 'react-i18next';
 import * as Keychain from 'react-native-keychain';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {NativeModules} from 'react-native';
@@ -10,6 +11,7 @@ const {AppLockModule} = NativeModules;
 
 const ForgotPinScreen = () => {
   const navigation = useNavigation();
+  const {t} = useTranslation();
   const [securityQuestion, setSecurityQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -33,16 +35,12 @@ const ForgotPinScreen = () => {
         setHasSecurityQuestion(true);
       } else {
         setHasSecurityQuestion(false);
-        Alert.alert(
-          'No Security Question',
-          'You have not set up a security question. Please set one up in Settings to use this feature.',
-          [
-            {
-              text: 'OK',
-              onPress: () => navigation.goBack(),
-            },
-          ],
-        );
+        Alert.alert(t('alerts.error'), t('forgot_pin.no_question_set'), [
+          {
+            text: t('common.ok'),
+            onPress: () => navigation.goBack(),
+          },
+        ]);
       }
     } catch (error) {
       console.error('Error checking security question:', error);
@@ -52,62 +50,55 @@ const ForgotPinScreen = () => {
 
   const handleResetPassword = async () => {
     if (!answer.trim() || !newPassword || !confirmPassword) {
-      Alert.alert('Error', 'Please fill in all fields');
+      Alert.alert(t('alerts.error'), t('errors.fill_all_fields'));
       return;
     }
 
     if (newPassword.length < 4) {
-      Alert.alert('Error', 'New PIN must be at least 4 digits');
+      Alert.alert(t('alerts.error'), t('errors.pin_too_short'));
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      Alert.alert('Error', 'New PINs do not match');
+      Alert.alert(t('alerts.error'), t('errors.pins_not_match'));
       return;
     }
 
     setIsLoading(true);
 
     try {
-      // Verify security answer
       const savedAnswer = await AsyncStorage.getItem('security_answer');
 
       if (
         !savedAnswer ||
         savedAnswer.toLowerCase() !== answer.trim().toLowerCase()
       ) {
-        Alert.alert('Error', 'Security answer is incorrect');
+        Alert.alert(t('alerts.error'), t('errors.security_answer_incorrect'));
         setIsLoading(false);
         return;
       }
 
-      // Reset the PIN in Keychain
       await Keychain.setGenericPassword('applock_user', newPassword, {
         service: 'applock_service',
         accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
       });
 
-      // Clear locked apps
       await AsyncStorage.removeItem('lockedApps');
       if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
         await AppLockModule.setLockedApps([]);
       }
 
-      Alert.alert(
-        'Success',
-        'PIN has been reset successfully. All apps have been unlocked.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              navigation.navigate('Main', {screen: 'Home'});
-            },
+      Alert.alert(t('alerts.success'), t('forgot_pin.reset_success'), [
+        {
+          text: t('common.ok'),
+          onPress: () => {
+            navigation.navigate('Main', {screen: 'Home'});
           },
-        ],
-      );
+        },
+      ]);
     } catch (error) {
       console.error('Error resetting password:', error);
-      Alert.alert('Error', 'Failed to reset PIN');
+      Alert.alert(t('alerts.error'), t('errors.reset_failed'));
     } finally {
       setIsLoading(false);
     }
@@ -116,9 +107,7 @@ const ForgotPinScreen = () => {
   if (!hasSecurityQuestion) {
     return (
       <View style={styles.container}>
-        <Text style={styles.errorText}>
-          Security question not set up. Please set it up in Settings.
-        </Text>
+        <Text style={styles.errorText}>{t('forgot_pin.no_question_set')}</Text>
       </View>
     );
   }
@@ -127,27 +116,27 @@ const ForgotPinScreen = () => {
     <ScrollView style={styles.container}>
       <Card style={styles.card}>
         <Card.Content>
-          <Text style={styles.title}>Forgot PIN</Text>
-          <Text style={styles.subtitle}>
-            Answer your security question to reset your PIN
-          </Text>
+          <Text style={styles.title}>{t('forgot_pin.title')}</Text>
+          <Text style={styles.subtitle}>{t('forgot_pin.subtitle')}</Text>
 
           <View style={styles.questionContainer}>
-            <Text style={styles.questionLabel}>Security Question:</Text>
+            <Text style={styles.questionLabel}>
+              {t('forgot_pin.security_question')}
+            </Text>
             <Text style={styles.questionText}>{securityQuestion}</Text>
           </View>
 
           <TextInput
-            label="Your Answer"
+            label={t('forgot_pin.your_answer')}
             value={answer}
             onChangeText={setAnswer}
             style={styles.input}
             mode="outlined"
-            placeholder="Enter your answer"
+            placeholder={t('forgot_pin.your_answer')}
           />
 
           <TextInput
-            label="New PIN (4-6 digits)"
+            label={t('forgot_pin.new_pin')}
             value={newPassword}
             onChangeText={setNewPassword}
             secureTextEntry={!showNewPassword}
@@ -165,7 +154,7 @@ const ForgotPinScreen = () => {
           />
 
           <TextInput
-            label="Confirm New PIN"
+            label={t('forgot_pin.confirm_new_pin')}
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             secureTextEntry={!showConfirmPassword}
@@ -188,15 +177,12 @@ const ForgotPinScreen = () => {
             style={styles.button}
             loading={isLoading}
             disabled={isLoading}>
-            Reset PIN
+            {t('forgot_pin.reset_pin')}
           </Button>
 
           <View style={styles.noteContainer}>
-            <Text style={styles.noteTitle}>Note:</Text>
-            <Text style={styles.noteText}>
-              Resetting your PIN will unlock all currently locked apps for
-              security reasons.
-            </Text>
+            <Text style={styles.noteTitle}>{t('common.note')}:</Text>
+            <Text style={styles.noteText}>{t('forgot_pin.reset_note')}</Text>
           </View>
         </Card.Content>
       </Card>

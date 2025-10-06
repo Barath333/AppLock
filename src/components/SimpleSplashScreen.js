@@ -7,10 +7,12 @@ import {
   Easing,
   Dimensions,
 } from 'react-native';
+import {useTranslation} from 'react-i18next';
 
 const {width, height} = Dimensions.get('window');
 
 const SimpleSplashScreen = ({onAnimationComplete}) => {
+  const {t} = useTranslation();
   const scaleAnim = useRef(new Animated.Value(0.5)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -18,7 +20,6 @@ const SimpleSplashScreen = ({onAnimationComplete}) => {
     console.log('🎬 Starting splash screen animation');
 
     const animate = async () => {
-      // Start animations
       Animated.parallel([
         Animated.spring(scaleAnim, {
           toValue: 1,
@@ -34,7 +35,6 @@ const SimpleSplashScreen = ({onAnimationComplete}) => {
         }),
       ]).start();
 
-      // Wait for 2 seconds then complete
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       console.log('✅ Splash screen animation complete');
@@ -56,8 +56,8 @@ const SimpleSplashScreen = ({onAnimationComplete}) => {
       </Animated.View>
 
       <Animated.View style={{opacity: fadeAnim}}>
-        <Text style={styles.title}>App Lock</Text>
-        <Text style={styles.subtitle}>Secure Your Privacy</Text>
+        <Text style={styles.title}>{t('splash.title')}</Text>
+        <Text style={styles.subtitle}>{t('splash.subtitle')}</Text>
       </Animated.View>
     </View>
   );
