@@ -169,7 +169,9 @@
     "title": "Select Language",
     "subtitle": "Choose your preferred language",
     "current": "Current",
-    "system_default": "System Default"
+    "system_default": "System Default",
+    "welcome_title": "Welcome to AppLock",
+    "welcome_subtitle": "Choose your preferred language to get started"
   },
   "errors": {
     "pin_too_short": "PIN must be at least 4 digits",
@@ -198,5 +200,13 @@
     "reset_pin": "Reset PIN",
     "reset": "Reset",
     "cannot_lock": "Cannot Lock"
+  },
+   "drawer": {
+    "home": "Home",
+    "settings": "Settings",
+    "premium": "Premium",
+    "security": "Security",
+    "about": "About"
   }
+
 }

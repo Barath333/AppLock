@@ -1,13 +1,15 @@
 import React, {useState, useEffect} from 'react';
-import {View, Text, StyleSheet, ScrollView, Alert} from 'react-native';
+import {View, Text, StyleSheet, ScrollView} from 'react-native';
 import {TextInput, Button, Card, RadioButton} from 'react-native-paper';
 import {useNavigation} from '@react-navigation/native';
 import {useTranslation} from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {useAlert} from '../contexts/AlertContext';
 
 const SecurityQuestionScreen = () => {
   const navigation = useNavigation();
   const {t} = useTranslation();
+  const {showAlert} = useAlert();
   const [selectedQuestion, setSelectedQuestion] = useState('');
   const [customQuestion, setCustomQuestion] = useState('');
   const [answer, setAnswer] = useState('');
@@ -52,21 +54,25 @@ const SecurityQuestionScreen = () => {
 
   const handleSave = async () => {
     if (!selectedQuestion) {
-      Alert.alert(t('alerts.error'), t('errors.select_question'));
+      showAlert(t('alerts.error'), t('errors.select_question'), 'error');
       return;
     }
 
     let questionToSave = selectedQuestion;
     if (selectedQuestion === t('security_question.custom_question')) {
       if (!customQuestion.trim()) {
-        Alert.alert(t('alerts.error'), t('errors.enter_custom_question'));
+        showAlert(
+          t('alerts.error'),
+          t('errors.enter_custom_question'),
+          'error',
+        );
         return;
       }
       questionToSave = customQuestion.trim();
     }
 
     if (!answer.trim()) {
-      Alert.alert(t('alerts.error'), t('errors.enter_answer'));
+      showAlert(t('alerts.error'), t('errors.enter_answer'), 'error');
       return;
     }
 
@@ -79,24 +85,30 @@ const SecurityQuestionScreen = () => {
         answer.trim().toLowerCase(),
       );
 
-      Alert.alert(t('alerts.success'), t('security_question.save_success'), [
-        {
-          text: t('common.ok'),
-          onPress: () => navigation.goBack(),
-        },
-      ]);
+      showAlert(
+        t('alerts.success'),
+        t('security_question.save_success'),
+        'success',
+        [
+          {
+            text: t('common.ok'),
+            onPress: () => navigation.goBack(),
+          },
+        ],
+      );
     } catch (error) {
       console.error('Error saving security question:', error);
-      Alert.alert(t('alerts.error'), t('errors.save_failed'));
+      showAlert(t('alerts.error'), t('errors.save_failed'), 'error');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleClear = async () => {
-    Alert.alert(
+    showAlert(
       t('security_question.clear_title'),
       t('security_question.clear_confirm'),
+      'warning',
       [
         {
           text: t('common.cancel'),
@@ -112,13 +124,14 @@ const SecurityQuestionScreen = () => {
               setSelectedQuestion('');
               setCustomQuestion('');
               setAnswer('');
-              Alert.alert(
+              showAlert(
                 t('alerts.success'),
                 t('security_question.clear_success'),
+                'success',
               );
             } catch (error) {
               console.error('Error clearing security question:', error);
-              Alert.alert(t('alerts.error'), t('errors.clear_failed'));
+              showAlert(t('alerts.error'), t('errors.clear_failed'), 'error');
             }
           },
           style: 'destructive',

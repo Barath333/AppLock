@@ -10,13 +10,13 @@ import {
   Dimensions,
   Image,
   LogBox,
-  Alert,
 } from 'react-native';
 import {Searchbar, Appbar, Card} from 'react-native-paper';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import {useTranslation} from 'react-i18next';
 import {NativeModules} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {useAlert} from '../contexts/AlertContext';
 
 const {AppListModule, AppLockModule} = NativeModules;
 const {width} = Dimensions.get('window');
@@ -28,6 +28,7 @@ const OUR_APP_PACKAGE = 'com.applock';
 const HomeScreen = () => {
   const navigation = useNavigation();
   const {t} = useTranslation();
+  const {showAlert} = useAlert();
   const [searchQuery, setSearchQuery] = useState('');
   const [apps, setApps] = useState([]);
   const [filteredApps, setFilteredApps] = useState([]);
@@ -196,7 +197,7 @@ const HomeScreen = () => {
 
   const toggleAppLock = async (appId, appPackageName, appName) => {
     if (appPackageName === OUR_APP_PACKAGE) {
-      Alert.alert(t('alerts.cannot_lock'), t('home.cannot_lock_self'));
+      showAlert(t('alerts.cannot_lock'), t('home.cannot_lock_self'), 'warning');
       return;
     }
 

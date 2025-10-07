@@ -1,5 +1,5 @@
 import React, {useState, useRef} from 'react';
-import {View, Text, StyleSheet, Alert, Animated, Easing} from 'react-native';
+import {View, Text, StyleSheet, Animated, Easing} from 'react-native';
 import {Button, TextInput} from 'react-native-paper';
 import {useNavigation} from '@react-navigation/native';
 import {useTranslation} from 'react-i18next';
@@ -7,10 +7,13 @@ import * as Keychain from 'react-native-keychain';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {validatePINStrength} from '../utils/securityUtils';
+import CustomKeyboardAvoidingView from '../components/KeyboardAvoidingView';
+import {useAlert} from '../contexts/AlertContext';
 
 const SetupScreen = () => {
   const navigation = useNavigation();
   const {t} = useTranslation();
+  const {showAlert} = useAlert();
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [showPin, setShowPin] = useState(false);
@@ -46,18 +49,18 @@ const SetupScreen = () => {
 
   const handleSetupComplete = async () => {
     if (pin.length < 4) {
-      Alert.alert(t('alerts.error'), t('errors.pin_too_short'));
+      showAlert(t('alerts.error'), t('errors.pin_too_short'), 'error');
       return;
     }
 
     const strengthCheck = validatePINStrength(pin);
     if (!strengthCheck.valid) {
-      Alert.alert(t('setup.weak_pin'), strengthCheck.message);
+      showAlert(t('setup.weak_pin'), strengthCheck.message, 'warning');
       return;
     }
 
     if (pin !== confirmPin) {
-      Alert.alert(t('alerts.error'), t('errors.pins_not_match'));
+      showAlert(t('alerts.error'), t('errors.pins_not_match'), 'error');
       return;
     }
 
@@ -82,16 +85,16 @@ const SetupScreen = () => {
       if (credentials && credentials.password === pin) {
         navigation.navigate('Main', {screen: 'Home'});
       } else {
-        Alert.alert(t('alerts.error'), t('errors.verification_failed'));
+        showAlert(t('alerts.error'), t('errors.verification_failed'), 'error');
       }
     } catch (error) {
       console.error('❌ Error saving PIN:', error);
-      Alert.alert(t('alerts.error'), t('errors.save_failed'));
+      showAlert(t('alerts.error'), t('errors.save_failed'), 'error');
     }
   };
 
   return (
-    <View style={styles.container}>
+    <CustomKeyboardAvoidingView style={styles.container}>
       <Animated.View
         style={[
           styles.content,
@@ -161,7 +164,7 @@ const SetupScreen = () => {
           {t('setup.complete_setup')}
         </Button>
       </Animated.View>
-    </View>
+    </CustomKeyboardAvoidingView>
   );
 };
 

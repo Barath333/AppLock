@@ -1,17 +1,19 @@
 import React, {useState, useEffect} from 'react';
-import {View, Text, StyleSheet, ScrollView, Alert} from 'react-native';
+import {View, Text, StyleSheet, ScrollView} from 'react-native';
 import {TextInput, Button, Card} from 'react-native-paper';
 import {useNavigation} from '@react-navigation/native';
 import {useTranslation} from 'react-i18next';
 import * as Keychain from 'react-native-keychain';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {NativeModules} from 'react-native';
+import {useAlert} from '../contexts/AlertContext';
 
 const {AppLockModule} = NativeModules;
 
 const ForgotPinScreen = () => {
   const navigation = useNavigation();
   const {t} = useTranslation();
+  const {showAlert} = useAlert();
   const [securityQuestion, setSecurityQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -35,7 +37,7 @@ const ForgotPinScreen = () => {
         setHasSecurityQuestion(true);
       } else {
         setHasSecurityQuestion(false);
-        Alert.alert(t('alerts.error'), t('forgot_pin.no_question_set'), [
+        showAlert(t('alerts.error'), t('forgot_pin.no_question_set'), 'error', [
           {
             text: t('common.ok'),
             onPress: () => navigation.goBack(),
@@ -50,17 +52,17 @@ const ForgotPinScreen = () => {
 
   const handleResetPassword = async () => {
     if (!answer.trim() || !newPassword || !confirmPassword) {
-      Alert.alert(t('alerts.error'), t('errors.fill_all_fields'));
+      showAlert(t('alerts.error'), t('errors.fill_all_fields'), 'error');
       return;
     }
 
     if (newPassword.length < 4) {
-      Alert.alert(t('alerts.error'), t('errors.pin_too_short'));
+      showAlert(t('alerts.error'), t('errors.pin_too_short'), 'error');
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      Alert.alert(t('alerts.error'), t('errors.pins_not_match'));
+      showAlert(t('alerts.error'), t('errors.pins_not_match'), 'error');
       return;
     }
 
@@ -73,7 +75,11 @@ const ForgotPinScreen = () => {
         !savedAnswer ||
         savedAnswer.toLowerCase() !== answer.trim().toLowerCase()
       ) {
-        Alert.alert(t('alerts.error'), t('errors.security_answer_incorrect'));
+        showAlert(
+          t('alerts.error'),
+          t('errors.security_answer_incorrect'),
+          'error',
+        );
         setIsLoading(false);
         return;
       }
@@ -88,7 +94,7 @@ const ForgotPinScreen = () => {
         await AppLockModule.setLockedApps([]);
       }
 
-      Alert.alert(t('alerts.success'), t('forgot_pin.reset_success'), [
+      showAlert(t('alerts.success'), t('forgot_pin.reset_success'), 'success', [
         {
           text: t('common.ok'),
           onPress: () => {
@@ -98,7 +104,7 @@ const ForgotPinScreen = () => {
       ]);
     } catch (error) {
       console.error('Error resetting password:', error);
-      Alert.alert(t('alerts.error'), t('errors.reset_failed'));
+      showAlert(t('alerts.error'), t('errors.reset_failed'), 'error');
     } finally {
       setIsLoading(false);
     }

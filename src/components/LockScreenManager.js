@@ -2,7 +2,6 @@ import React, {useState, useEffect, useRef} from 'react';
 import {
   View,
   BackHandler,
-  Alert,
   NativeModules,
   AppState,
   DeviceEventEmitter,
@@ -11,7 +10,9 @@ import {
 } from 'react-native';
 import LockScreen from './LockScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Keychain from 'react-native-keychain';
 import {useTranslation} from 'react-i18next';
+import {useAlert} from '../contexts/AlertContext';
 
 const {AppLockModule, PermissionModule} = NativeModules;
 
@@ -29,8 +30,10 @@ const LockScreenManager = ({
   initialLockedApp,
   forceLockScreen = false,
   onForgotPin,
+  onResetToSetup,
 }) => {
   const {t} = useTranslation();
+  const {showAlert} = useAlert();
   const [showLockScreen, setShowLockScreen] = useState(false);
   const [currentApp, setCurrentApp] = useState(null);
   const [lockedApps, setLockedApps] = useState([]);
@@ -260,9 +263,10 @@ const LockScreenManager = ({
       if (!isRunning) {
         console.warn('⚠️ Accessibility service is NOT running');
         if (!showLockScreen) {
-          Alert.alert(
+          showAlert(
             t('permissions.accessibility_required'),
             t('permissions.accessibility_description'),
+            'warning',
             [
               {
                 text: t('permissions.open_settings'),
@@ -378,47 +382,78 @@ const LockScreenManager = ({
           onForgotPin();
         }
       } else {
-        Alert.alert(t('alerts.reset_pin'), t('forgot_pin.reset_warning'), [
-          {
-            text: t('common.cancel'),
-            style: 'cancel',
-          },
-          {
-            text: t('alerts.reset'),
-            onPress: async () => {
-              try {
-                await Keychain.resetGenericPassword({
-                  service: 'applock_service',
-                });
-
-                await AppLockModule.setLockedApps([]);
-
-                Alert.alert(
-                  t('alerts.success'),
-                  t('forgot_pin.reset_success'),
-                  [
-                    {
-                      text: t('common.ok'),
-                      onPress: () => {
-                        handleClose();
-                        if (onForgotPin) {
-                          onForgotPin();
-                        }
-                      },
-                    },
-                  ],
-                );
-              } catch (error) {
-                console.error('Error resetting PIN:', error);
-                Alert.alert(t('alerts.error'), t('errors.reset_failed'));
-              }
+        showAlert(
+          t('alerts.reset_pin'),
+          t('forgot_pin.reset_warning'),
+          'warning',
+          [
+            {
+              text: t('common.cancel'),
+              style: 'cancel',
             },
-            style: 'destructive',
-          },
-        ]);
+            {
+              text: t('alerts.reset'),
+              onPress: async () => {
+                try {
+                  console.log('🔄 Resetting app from LockScreenManager...');
+                  await resetAppToSetup();
+                } catch (error) {
+                  console.error('Error resetting PIN:', error);
+                  showAlert(
+                    t('alerts.error'),
+                    t('errors.reset_failed'),
+                    'error',
+                  );
+                }
+              },
+              style: 'destructive',
+            },
+          ],
+        );
       }
     } catch (error) {
       console.error('Error checking security question:', error);
+    }
+  };
+
+  const resetAppToSetup = async () => {
+    try {
+      console.log('🔄 Resetting app to setup state from LockScreenManager...');
+
+      // Reset Keychain
+      await Keychain.resetGenericPassword({
+        service: 'applock_service',
+      });
+
+      // Reset AsyncStorage
+      await AsyncStorage.multiRemove([
+        'setupCompleted',
+        'lockedApps',
+        'failed_attempts',
+        'lock_until',
+        'security_question',
+        'security_answer',
+      ]);
+
+      // Reset native module
+      if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
+        await AppLockModule.setLockedApps([]);
+      }
+
+      console.log('✅ App reset successfully from LockScreenManager');
+
+      // Close lock screen
+      setShowLockScreen(false);
+      setCurrentApp(null);
+      setIsUnlocking(false);
+
+      // Call parent reset function to navigate to setup screen
+      if (onResetToSetup) {
+        onResetToSetup();
+      }
+    } catch (error) {
+      console.error('❌ Error resetting app from LockScreenManager:', error);
+      throw error;
     }
   };
 

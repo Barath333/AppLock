@@ -10,7 +10,6 @@ import {
   Modal,
   AppState,
   BackHandler,
-  Alert,
   NativeModules,
 } from 'react-native';
 import {TextInput, Button} from 'react-native-paper';
@@ -19,6 +18,7 @@ import * as Keychain from 'react-native-keychain';
 import {BannerAd, BannerAdSize, TestIds} from 'react-native-google-mobile-ads';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useTranslation} from 'react-i18next';
+import {useAlert} from '../contexts/AlertContext';
 
 const {AppLockModule} = NativeModules;
 
@@ -30,6 +30,7 @@ const {width, height} = Dimensions.get('window');
 
 const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
   const {t} = useTranslation();
+  const {showAlert} = useAlert();
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
   const [error, setError] = useState('');
@@ -212,56 +213,43 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
       const securityAnswer = await AsyncStorage.getItem('security_answer');
 
       if (securityQuestion && securityAnswer) {
-        console.log('🔄 Calling onForgotPin prop');
+        console.log('🔄 Calling onForgotPin prop - Security Q&A exists');
         if (onForgotPin) {
           onForgotPin();
         }
         onClose();
       } else {
-        Alert.alert(t('alerts.reset_pin'), t('forgot_pin.reset_warning'), [
-          {
-            text: t('common.cancel'),
-            style: 'cancel',
-          },
-          {
-            text: t('alerts.reset'),
-            onPress: async () => {
-              try {
-                await Keychain.resetGenericPassword({
-                  service: 'applock_service',
-                });
-                await AsyncStorage.removeItem('lockedApps');
-                if (
-                  AppLockModule &&
-                  typeof AppLockModule.setLockedApps === 'function'
-                ) {
-                  await AppLockModule.setLockedApps([]);
-                }
-                await resetFailedAttempts();
-
-                Alert.alert(
-                  t('alerts.success'),
-                  t('forgot_pin.reset_success'),
-                  [
-                    {
-                      text: t('common.ok'),
-                      onPress: () => {
-                        onClose();
-                        if (onForgotPin) {
-                          onForgotPin();
-                        }
-                      },
-                    },
-                  ],
-                );
-              } catch (error) {
-                console.error('Error resetting PIN:', error);
-                Alert.alert(t('alerts.error'), t('errors.reset_failed'));
-              }
+        console.log('🔄 No security Q&A - showing reset confirmation');
+        showAlert(
+          t('alerts.reset_pin'),
+          t('forgot_pin.reset_warning'),
+          'warning',
+          [
+            {
+              text: t('common.cancel'),
+              style: 'cancel',
             },
-            style: 'destructive',
-          },
-        ]);
+            {
+              text: t('alerts.reset'),
+              onPress: async () => {
+                try {
+                  console.log('🔄 User confirmed reset - calling onForgotPin');
+                  if (onForgotPin) {
+                    onForgotPin();
+                  }
+                } catch (error) {
+                  console.error('Error in reset confirmation:', error);
+                  showAlert(
+                    t('alerts.error'),
+                    t('errors.reset_failed'),
+                    'error',
+                  );
+                }
+              },
+              style: 'destructive',
+            },
+          ],
+        );
       }
     } catch (error) {
       console.error('Error checking security question:', error);

@@ -15,10 +15,13 @@ import {
   checkDeviceSecurity,
   checkAppTampering,
 } from './src/utils/securityUtils';
+import * as Keychain from 'react-native-keychain';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Import i18n and LanguageProvider
 import './src/i18n/index';
 import {LanguageProvider} from './src/contexts/LanguageContext';
+import {AlertProvider} from './src/contexts/AlertContext';
 
 const {AppLockModule} = NativeModules;
 
@@ -40,21 +43,82 @@ export default function App() {
   const [isLockScreenMode, setIsLockScreenMode] = useState(false);
   const [pendingLockedApp, setPendingLockedApp] = useState(null);
   const [securityWarning, setSecurityWarning] = useState(null);
+  const [isSetupCompleted, setIsSetupCompleted] = useState(null);
 
   const navigationRef = useRef();
 
-  const handleForgotPin = () => {
-    navigationRef.current?.navigate('ForgotPin');
-  };
-
   useEffect(() => {
     console.log('🚀 App component mounted');
+    checkSetupStatus();
     checkSecurity();
     checkLockScreenMode();
     return () => {
       // Cleanup if needed
     };
   }, []);
+
+  const checkSetupStatus = async () => {
+    try {
+      const setupCompleted = await AsyncStorage.getItem('setupCompleted');
+      console.log('📋 Setup status from storage:', setupCompleted);
+      setIsSetupCompleted(setupCompleted === 'true');
+    } catch (error) {
+      console.error('Error checking setup status:', error);
+      setIsSetupCompleted(false);
+    }
+  };
+
+  const handleResetToSetup = async () => {
+    console.log('🔄 Resetting app to setup state...');
+    try {
+      // Clear all stored data
+      await Keychain.resetGenericPassword({
+        service: 'applock_service',
+      });
+
+      await AsyncStorage.multiRemove([
+        'setupCompleted',
+        'lockedApps',
+        'failed_attempts',
+        'lock_until',
+        'security_question',
+        'security_answer',
+      ]);
+
+      if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
+        await AppLockModule.setLockedApps([]);
+      }
+
+      console.log('✅ App reset successfully');
+      setIsSetupCompleted(false);
+
+      // Navigate to setup screen
+      if (navigationRef.current) {
+        navigationRef.current.reset({
+          index: 0,
+          routes: [{name: 'Setup'}],
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error resetting app:', error);
+      Alert.alert(
+        'Error',
+        'Failed to reset app. Please restart the application.',
+      );
+    }
+  };
+
+  const handleForgotPin = () => {
+    console.log('🔄 Handling forgot PIN');
+    if (navigationRef.current) {
+      navigationRef.current.navigate('ForgotPin');
+    }
+  };
+
+  const handleSetupComplete = () => {
+    console.log('✅ Setup completed');
+    setIsSetupCompleted(true);
+  };
 
   const checkSecurity = async () => {
     try {
@@ -147,23 +211,39 @@ export default function App() {
     setIsSplashVisible(false);
   };
 
+  // Show loading state while checking setup status
+  if (isSetupCompleted === null) {
+    return (
+      <GestureHandlerRootView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <SimpleSplashScreen onAnimationComplete={handleSplashComplete} />
+      </GestureHandlerRootView>
+    );
+  }
+
   // If we're in lock screen mode, skip splash and show the lock screen immediately
   if (isLockScreenMode) {
     console.log('🔒 Rendering in lock screen mode (no splash)');
     return (
       <GestureHandlerRootView style={styles.container}>
         <LanguageProvider>
-          <PaperProvider theme={theme}>
-            <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-            <NavigationContainer ref={navigationRef}>
-              <LockScreenManager
-                initialLockedApp={pendingLockedApp}
-                forceLockScreen={true}
-                onForgotPin={handleForgotPin}>
-                <AppNavigator />
-              </LockScreenManager>
-            </NavigationContainer>
-          </PaperProvider>
+          <AlertProvider>
+            <PaperProvider theme={theme}>
+              <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+              <NavigationContainer ref={navigationRef}>
+                <LockScreenManager
+                  initialLockedApp={pendingLockedApp}
+                  forceLockScreen={true}
+                  onForgotPin={handleForgotPin}
+                  onResetToSetup={handleResetToSetup}>
+                  <AppNavigator
+                    isSetupCompleted={isSetupCompleted}
+                    onSetupComplete={handleSetupComplete}
+                  />
+                </LockScreenManager>
+              </NavigationContainer>
+            </PaperProvider>
+          </AlertProvider>
         </LanguageProvider>
       </GestureHandlerRootView>
     );
@@ -185,21 +265,28 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <LanguageProvider>
-        <PaperProvider theme={theme}>
-          <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-          {securityWarning && (
-            <View style={styles.securityWarning}>
-              <Text style={styles.securityWarningText}>
-                ⚠️ {securityWarning}
-              </Text>
-            </View>
-          )}
-          <NavigationContainer ref={navigationRef}>
-            <LockScreenManager onForgotPin={handleForgotPin}>
-              <AppNavigator />
-            </LockScreenManager>
-          </NavigationContainer>
-        </PaperProvider>
+        <AlertProvider>
+          <PaperProvider theme={theme}>
+            <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+            {securityWarning && (
+              <View style={styles.securityWarning}>
+                <Text style={styles.securityWarningText}>
+                  ⚠️ {securityWarning}
+                </Text>
+              </View>
+            )}
+            <NavigationContainer ref={navigationRef}>
+              <LockScreenManager
+                onForgotPin={handleForgotPin}
+                onResetToSetup={handleResetToSetup}>
+                <AppNavigator
+                  isSetupCompleted={isSetupCompleted}
+                  onSetupComplete={handleSetupComplete}
+                />
+              </LockScreenManager>
+            </NavigationContainer>
+          </PaperProvider>
+        </AlertProvider>
       </LanguageProvider>
     </GestureHandlerRootView>
   );

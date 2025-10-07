@@ -1,5 +1,5 @@
 import React, {useState, useEffect} from 'react';
-import {View, Text, StyleSheet, ScrollView, Alert, Switch} from 'react-native';
+import {View, Text, StyleSheet, ScrollView, Switch} from 'react-native';
 import {List, Button, Divider, Card} from 'react-native-paper';
 import {useNavigation} from '@react-navigation/native';
 import {useTranslation} from 'react-i18next';
@@ -8,11 +8,13 @@ import * as Keychain from 'react-native-keychain';
 import * as Biometrics from 'react-native-biometrics';
 import {checkDeviceSecurity, checkAppTampering} from '../utils/securityUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {useAlert} from '../contexts/AlertContext';
 
 const SettingsScreen = () => {
   const navigation = useNavigation();
   const {t} = useTranslation();
   const {currentLanguage, languages} = useLanguage();
+  const {showAlert} = useAlert();
 
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
   const [isPremium, setIsPremium] = useState(false);
@@ -66,9 +68,10 @@ const SettingsScreen = () => {
         const {available} = await Biometrics.isSensorAvailable();
 
         if (!available) {
-          Alert.alert(
+          showAlert(
             t('alerts.error'),
             'Biometric authentication is not available on this device',
+            'error',
           );
           return;
         }
@@ -80,23 +83,33 @@ const SettingsScreen = () => {
         if (success) {
           await AsyncStorage.setItem('biometrics_enabled', 'true');
           setBiometricsEnabled(true);
-          Alert.alert(t('alerts.success'), 'Biometric authentication enabled');
+          showAlert(
+            t('alerts.success'),
+            'Biometric authentication enabled',
+            'success',
+          );
         } else {
-          Alert.alert(t('alerts.error'), 'Biometric authentication failed');
+          showAlert(
+            t('alerts.error'),
+            'Biometric authentication failed',
+            'error',
+          );
         }
       } catch (error) {
         console.error('Error enabling biometrics:', error);
-        Alert.alert(
+        showAlert(
           t('alerts.error'),
           'Failed to enable biometric authentication',
+          'error',
         );
       }
     } else {
       await AsyncStorage.setItem('biometrics_enabled', 'false');
       setBiometricsEnabled(false);
-      Alert.alert(
+      showAlert(
         'Biometrics Disabled',
         'Biometric authentication has been disabled',
+        'info',
       );
     }
   };
@@ -114,9 +127,10 @@ const SettingsScreen = () => {
   };
 
   const handleContactSupport = () => {
-    Alert.alert(
+    showAlert(
       t('settings.contact_support'),
       'Support email: support@applock.com',
+      'info',
     );
   };
 

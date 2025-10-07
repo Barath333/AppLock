@@ -1,14 +1,17 @@
 import React, {useState} from 'react';
-import {View, Text, StyleSheet, ScrollView, Alert} from 'react-native';
+import {View, Text, StyleSheet, ScrollView} from 'react-native';
 import {TextInput, Button, Card} from 'react-native-paper';
 import {useNavigation} from '@react-navigation/native';
 import {useTranslation} from 'react-i18next';
 import * as Keychain from 'react-native-keychain';
 import {validatePINStrength} from '../utils/securityUtils';
+import CustomKeyboardAvoidingView from '../components/KeyboardAvoidingView';
+import {useAlert} from '../contexts/AlertContext';
 
 const ChangePasswordScreen = () => {
   const navigation = useNavigation();
   const {t} = useTranslation();
+  const {showAlert} = useAlert();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -30,23 +33,23 @@ const ChangePasswordScreen = () => {
 
   const handleChangePassword = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
-      Alert.alert(t('alerts.error'), t('errors.fill_all_fields'));
+      showAlert(t('alerts.error'), t('errors.fill_all_fields'), 'error');
       return;
     }
 
     if (newPassword.length < 4) {
-      Alert.alert(t('alerts.error'), t('errors.pin_too_short'));
+      showAlert(t('alerts.error'), t('errors.pin_too_short'), 'error');
       return;
     }
 
     const strengthCheck = validatePINStrength(newPassword);
     if (!strengthCheck.valid) {
-      Alert.alert(t('setup.weak_pin'), strengthCheck.message);
+      showAlert(t('setup.weak_pin'), strengthCheck.message, 'warning');
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      Alert.alert(t('alerts.error'), t('errors.pins_not_match'));
+      showAlert(t('alerts.error'), t('errors.pins_not_match'), 'error');
       return;
     }
 
@@ -58,7 +61,7 @@ const ChangePasswordScreen = () => {
       });
 
       if (!credentials || credentials.password !== currentPassword) {
-        Alert.alert(t('alerts.error'), t('errors.invalid_current_pin'));
+        showAlert(t('alerts.error'), t('errors.invalid_current_pin'), 'error');
         setIsLoading(false);
         return;
       }
@@ -68,26 +71,31 @@ const ChangePasswordScreen = () => {
         accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
       });
 
-      Alert.alert(t('alerts.success'), t('change_password.pin_changed'), [
-        {
-          text: t('common.ok'),
-          onPress: () => navigation.goBack(),
-        },
-      ]);
+      showAlert(
+        t('alerts.success'),
+        t('change_password.pin_changed'),
+        'success',
+        [
+          {
+            text: t('common.ok'),
+            onPress: () => navigation.goBack(),
+          },
+        ],
+      );
 
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
     } catch (error) {
       console.error('Error changing password:', error);
-      Alert.alert(t('alerts.error'), t('errors.change_failed'));
+      showAlert(t('alerts.error'), t('errors.change_failed'), 'error');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <CustomKeyboardAvoidingView style={styles.container}>
       <Card style={styles.card}>
         <Card.Content>
           <Text style={styles.title}>{t('change_password.title')}</Text>
@@ -173,7 +181,7 @@ const ChangePasswordScreen = () => {
           </View>
         </Card.Content>
       </Card>
-    </ScrollView>
+    </CustomKeyboardAvoidingView>
   );
 };
 
