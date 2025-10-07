@@ -5,6 +5,7 @@ import {useNavigation} from '@react-navigation/native';
 import {useTranslation} from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useAlert} from '../contexts/AlertContext';
+import CustomKeyboardAvoidingView from '../components/KeyboardAvoidingView';
 
 const SecurityQuestionScreen = () => {
   const navigation = useNavigation();
@@ -141,7 +142,7 @@ const SecurityQuestionScreen = () => {
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <CustomKeyboardAvoidingView style={styles.container}>
       <Card style={styles.card}>
         <Card.Content>
           <Text style={styles.title}>{t('security_question.title')}</Text>
@@ -216,7 +217,7 @@ const SecurityQuestionScreen = () => {
           )}
         </Card.Content>
       </Card>
-    </ScrollView>
+    </CustomKeyboardAvoidingView>
   );
 };
 

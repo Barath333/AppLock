@@ -254,9 +254,9 @@ const HomeScreen = () => {
           <Text style={styles.appName} numberOfLines={1}>
             {item.name}
           </Text>
-          <Text style={styles.packageName} numberOfLines={1}>
+          {/* <Text style={styles.packageName} numberOfLines={1}>
             {item.packageName}
-          </Text>
+          </Text> */}
           {item.locked && (
             <Text style={styles.lockedBadge}>🔒 {t('home.app_locked')}</Text>
           )}

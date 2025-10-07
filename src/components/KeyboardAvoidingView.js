@@ -1,28 +1,22 @@
 import React from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  TouchableWithoutFeedback,
-  Keyboard,
-  StyleSheet,
-} from 'react-native';
+import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
+import {StyleSheet} from 'react-native';
 
 const CustomKeyboardAvoidingView = ({children, style}) => {
   return (
-    <KeyboardAvoidingView
+    <KeyboardAwareScrollView
       style={[styles.container, style]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled">
-          {children}
-        </ScrollView>
-      </TouchableWithoutFeedback>
-    </KeyboardAvoidingView>
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      enableOnAndroid={true}
+      extraScrollHeight={20}
+      enableAutomaticScroll={true}
+      // Add these props for better behavior
+      extraHeight={100}
+      keyboardOpeningTime={0}>
+      {children}
+    </KeyboardAwareScrollView>
   );
 };
 
