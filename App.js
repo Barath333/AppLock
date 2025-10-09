@@ -52,9 +52,6 @@ export default function App() {
     checkSetupStatus();
     checkSecurity();
     checkLockScreenMode();
-    return () => {
-      // Cleanup if needed
-    };
   }, []);
 
   const checkSetupStatus = async () => {
@@ -71,11 +68,7 @@ export default function App() {
   const handleResetToSetup = async () => {
     console.log('🔄 Resetting app to setup state...');
     try {
-      // Clear all stored data
-      await Keychain.resetGenericPassword({
-        service: 'applock_service',
-      });
-
+      await Keychain.resetGenericPassword({service: 'applock_service'});
       await AsyncStorage.multiRemove([
         'setupCompleted',
         'lockedApps',
@@ -84,15 +77,11 @@ export default function App() {
         'security_question',
         'security_answer',
       ]);
-
       if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
         await AppLockModule.setLockedApps([]);
       }
-
       console.log('✅ App reset successfully');
       setIsSetupCompleted(false);
-
-      // Navigate to setup screen
       if (navigationRef.current) {
         navigationRef.current.reset({
           index: 0,
@@ -124,37 +113,21 @@ export default function App() {
     try {
       const deviceSecurity = await checkDeviceSecurity();
       const appTampering = await checkAppTampering();
-
       const warnings = [];
 
-      if (deviceSecurity.isRooted) {
-        warnings.push('Rooted device detected - security may be compromised');
-      }
-
-      if (deviceSecurity.isJailBroken) {
-        warnings.push(
-          'Jailbroken device detected - security may be compromised',
-        );
-      }
-
-      if (appTampering.isEmulator) {
-        warnings.push('Running in emulator - security may be compromised');
-      }
+      if (deviceSecurity.isRooted) warnings.push('Rooted device detected');
+      if (deviceSecurity.isJailBroken)
+        warnings.push('Jailbroken device detected');
+      if (appTampering.isEmulator) warnings.push('Running in emulator');
 
       if (warnings.length > 0) {
         setSecurityWarning(warnings.join('\n• '));
-
         if (deviceSecurity.isRooted || deviceSecurity.isJailBroken) {
           Alert.alert(
             'Security Warning',
-            `Your device may not be secure:\n\n• ${warnings.join(
-              '\n• ',
-            )}\n\nFor maximum security, please use a non-rooted device.`,
+            `Your device may not be secure:\n\n• ${warnings.join('\n• ')}`,
             [
-              {
-                text: 'Continue Anyway',
-                style: 'default',
-              },
+              {text: 'Continue Anyway', style: 'default'},
               {
                 text: 'Exit App',
                 style: 'destructive',
@@ -172,13 +145,11 @@ export default function App() {
   const checkLockScreenMode = async () => {
     try {
       console.log('🔍 Checking if app started in lock screen mode...');
-
       if (
         AppLockModule &&
         typeof AppLockModule.getPendingLockedApp === 'function'
       ) {
         const pendingApp = await AppLockModule.getPendingLockedApp();
-
         if (pendingApp && pendingApp.packageName) {
           console.log(
             '🚨 App started in lock screen mode for:',
@@ -190,19 +161,18 @@ export default function App() {
           return;
         }
       }
-
-      console.log('📭 App started in normal mode, showing splash screen');
-      const timer = setTimeout(() => {
-        setIsSplashVisible(false);
-      }, 2000);
-
-      return () => clearTimeout(timer);
+      console.log('📭 App started in normal mode');
+      // Only show splash if not in lock screen mode
+      if (!isLockScreenMode) {
+        const timer = setTimeout(() => setIsSplashVisible(false), 2000);
+        return () => clearTimeout(timer);
+      }
     } catch (error) {
       console.error('❌ Error checking lock screen mode:', error);
-      const timer = setTimeout(() => {
-        setIsSplashVisible(false);
-      }, 2000);
-      return () => clearTimeout(timer);
+      if (!isLockScreenMode) {
+        const timer = setTimeout(() => setIsSplashVisible(false), 2000);
+        return () => clearTimeout(timer);
+      }
     }
   };
 
@@ -221,47 +191,7 @@ export default function App() {
     );
   }
 
-  // If we're in lock screen mode, skip splash and show the lock screen immediately
-  if (isLockScreenMode) {
-    console.log('🔒 Rendering in lock screen mode (no splash)');
-    return (
-      <GestureHandlerRootView style={styles.container}>
-        <LanguageProvider>
-          <AlertProvider>
-            <PaperProvider theme={theme}>
-              <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-              <NavigationContainer ref={navigationRef}>
-                <LockScreenManager
-                  initialLockedApp={pendingLockedApp}
-                  forceLockScreen={true}
-                  onForgotPin={handleForgotPin}
-                  onResetToSetup={handleResetToSetup}>
-                  <AppNavigator
-                    isSetupCompleted={isSetupCompleted}
-                    onSetupComplete={handleSetupComplete}
-                  />
-                </LockScreenManager>
-              </NavigationContainer>
-            </PaperProvider>
-          </AlertProvider>
-        </LanguageProvider>
-      </GestureHandlerRootView>
-    );
-  }
-
-  // Show splash screen for normal app start
-  if (isSplashVisible) {
-    console.log('🎨 Rendering splash screen');
-    return (
-      <GestureHandlerRootView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-        <SimpleSplashScreen onAnimationComplete={handleSplashComplete} />
-      </GestureHandlerRootView>
-    );
-  }
-
-  // Show main app after splash
-  console.log('🏠 Rendering main app after splash');
+  // Main app render
   return (
     <GestureHandlerRootView style={styles.container}>
       <LanguageProvider>
@@ -276,13 +206,22 @@ export default function App() {
               </View>
             )}
             <NavigationContainer ref={navigationRef}>
+              {/* CRITICAL: LockScreenManager must be INSIDE NavigationContainer */}
               <LockScreenManager
+                initialLockedApp={isLockScreenMode ? pendingLockedApp : null}
+                forceLockScreen={isLockScreenMode}
                 onForgotPin={handleForgotPin}
                 onResetToSetup={handleResetToSetup}>
-                <AppNavigator
-                  isSetupCompleted={isSetupCompleted}
-                  onSetupComplete={handleSetupComplete}
-                />
+                {isSplashVisible ? (
+                  <SimpleSplashScreen
+                    onAnimationComplete={handleSplashComplete}
+                  />
+                ) : (
+                  <AppNavigator
+                    isSetupCompleted={isSetupCompleted}
+                    onSetupComplete={handleSetupComplete}
+                  />
+                )}
               </LockScreenManager>
             </NavigationContainer>
           </PaperProvider>

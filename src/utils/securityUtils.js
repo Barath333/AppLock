@@ -1,4 +1,14 @@
 // src/utils/securityUtils.js
+
+// Import DeviceInfo properly
+let DeviceInfo;
+try {
+  DeviceInfo = require('react-native-device-info');
+} catch (error) {
+  console.warn('DeviceInfo module not available in securityUtils:', error);
+  DeviceInfo = null;
+}
+
 export const validatePINStrength = pin => {
   const weakPatterns = [
     '1234',
@@ -37,51 +47,127 @@ export const validatePINStrength = pin => {
 
 export const checkDeviceSecurity = async () => {
   try {
-    const DeviceInfo = require('react-native-device-info');
+    if (!DeviceInfo) {
+      console.warn('DeviceInfo not available in securityUtils');
+      return {
+        isRooted: false,
+        isJailBroken: false,
+      };
+    }
 
-    // Check for root/jailbreak
     const isRooted = await DeviceInfo.isRooted();
     const isJailBroken = await DeviceInfo.isJailBroken();
 
     return {
-      isSecure: !isRooted && !isJailBroken,
       isRooted,
       isJailBroken,
-      warnings: [],
     };
   } catch (error) {
-    console.log('Security check error:', error);
+    console.error('Error checking device security:', error);
     return {
-      isSecure: true,
       isRooted: false,
       isJailBroken: false,
-      warnings: ['Security check unavailable'],
     };
   }
 };
 
 export const checkAppTampering = async () => {
   try {
-    const DeviceInfo = require('react-native-device-info');
+    if (!DeviceInfo) {
+      console.warn('DeviceInfo not available in securityUtils');
+      return {
+        isEmulator: false,
+        isTampered: false,
+      };
+    }
 
-    // Check if app is running in emulator (common for tampering)
     const isEmulator = await DeviceInfo.isEmulator();
 
-    // Check if app is being debugged
-    // Note: This is a basic check - in production you'd want more sophisticated checks
-
     return {
-      isTampered: isEmulator, // In production, add more checks
       isEmulator,
-      warnings: isEmulator
-        ? ['Running in emulator - security may be compromised']
-        : [],
+      isTampered: false,
     };
   } catch (error) {
+    console.error('Error checking app tampering:', error);
     return {
+      isEmulator: false,
+      isTampered: false,
+    };
+  }
+};
+
+// Additional security utility functions
+export const checkAppIntegrity = async () => {
+  try {
+    // Check for debug mode
+    if (__DEV__) {
+      console.warn('App is running in development mode');
+    }
+
+    let isEmulator = false;
+    if (DeviceInfo && typeof DeviceInfo.isEmulator === 'function') {
+      isEmulator = await DeviceInfo.isEmulator();
+      if (isEmulator) {
+        console.warn('App is running in emulator');
+      }
+    }
+
+    return {
+      isDebug: __DEV__,
+      isTampered: false,
+      isEmulator,
+    };
+  } catch (error) {
+    console.error('Error checking app integrity:', error);
+    return {
+      isDebug: __DEV__,
       isTampered: false,
       isEmulator: false,
-      warnings: [],
+    };
+  }
+};
+
+export const getDeviceSecurityInfo = async () => {
+  try {
+    const securityInfo = {
+      isRooted: false,
+      isJailBroken: false,
+      isEmulator: false,
+      hasRootAccess: false,
+      trustScore: 100, // Default trust score
+    };
+
+    // Check if DeviceInfo is available
+    if (DeviceInfo) {
+      if (typeof DeviceInfo.isRooted === 'function') {
+        securityInfo.isRooted = await DeviceInfo.isRooted();
+      }
+      if (typeof DeviceInfo.isJailBroken === 'function') {
+        securityInfo.isJailBroken = await DeviceInfo.isJailBroken();
+      }
+      if (typeof DeviceInfo.isEmulator === 'function') {
+        securityInfo.isEmulator = await DeviceInfo.isEmulator();
+      }
+
+      // Calculate trust score
+      if (securityInfo.isRooted || securityInfo.isJailBroken) {
+        securityInfo.trustScore = 30;
+      } else if (securityInfo.isEmulator) {
+        securityInfo.trustScore = 70;
+      } else {
+        securityInfo.trustScore = 100;
+      }
+    }
+
+    return securityInfo;
+  } catch (error) {
+    console.error('Error getting device security info:', error);
+    return {
+      isRooted: false,
+      isJailBroken: false,
+      isEmulator: false,
+      hasRootAccess: false,
+      trustScore: 100,
     };
   }
 };

@@ -2,15 +2,19 @@ package com.applock
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import android.content.pm.ApplicationInfo
 
 class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
     private val reactContext: ReactApplicationContext = reactContext
+    private val handler = Handler(Looper.getMainLooper())
+    private val OUR_APP_PACKAGE = "com.applock"
 
     override fun getName(): String = "AppLockModule"
 
@@ -31,11 +35,11 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
             val activity = currentActivity
             activity?.runOnUiThread {
                 try {
-                    val intent = android.content.Intent(activity, activity::class.java).apply {
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                                android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
-                                android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                                android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    val intent = Intent(activity, activity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                                Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                                Intent.FLAG_ACTIVITY_CLEAR_TOP)
                     }
                     activity.startActivity(intent)
                     Log.d("AppLockModule", "✅ App brought to front successfully")
@@ -55,6 +59,7 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
             val packageName = getPendingLockedAppFromPrefs()
             val className = getPendingLockedClassFromPrefs()
             
+            // CRITICAL FIX: Include our own app in pending locked apps
             if (packageName != null) {
                 Log.d("AppLockModule", "📦 Found pending locked app: $packageName")
                 val result = WritableNativeMap().apply {
@@ -82,7 +87,7 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
             val packageName = prefs.getString("pendingLockedPackage", null)
             val timestamp = prefs.getLong("pendingLockedTimestamp", 0)
             
-            // Only return if it's recent (within 30 seconds)
+            // Only return if it's recent (within 30 seconds) - INCLUDING OUR OWN APP
             if (packageName != null && System.currentTimeMillis() - timestamp < 30000) {
                 packageName
             } else {
@@ -122,37 +127,48 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
         try {
             Log.d("AppLockModule", "🚀 Launching original app: $packageName")
             
-            // Temporarily unlock the app in accessibility service
+            // Temporarily unlock the app FIRST
             temporarilyUnlockApp(packageName)
             
-            val activity = currentActivity
-            
-            Handler(Looper.getMainLooper()).post {
+            handler.post {
                 try {
+                    // Don't launch our own app - just close the lock screen
+                    if (packageName == OUR_APP_PACKAGE) {
+                        Log.d("AppLockModule", "🏠 Not launching our own app, just closing lock screen")
+                        currentActivity?.finishAndRemoveTask()
+                        return@post
+                    }
+                    
                     // Get the launch intent for the original app
                     val launchIntent = reactContext.packageManager.getLaunchIntentForPackage(packageName)
                     if (launchIntent != null) {
-                        // Use standard flags for launching app
-                        launchIntent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
-                                           android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+                        // Clear any existing flags and set proper ones
+                        launchIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                                           Intent.FLAG_ACTIVITY_CLEAR_TOP
                         
                         // Start the original app
                         reactContext.startActivity(launchIntent)
                         Log.d("AppLockModule", "✅ Original app launched: $packageName")
                         
-                        // Move our app to background after a short delay
-                        Handler(Looper.getMainLooper()).postDelayed({
-                            moveTaskToBack(activity)
+                        // Close our lock screen activity after a short delay
+                        handler.postDelayed({
+                            try {
+                                currentActivity?.finishAndRemoveTask()
+                                Log.d("AppLockModule", "✅ Lock screen closed after app launch")
+                            } catch (e: Exception) {
+                                Log.e("AppLockModule", "❌ Error closing lock screen: ${e.message}")
+                            }
                         }, 300)
+                        
                     } else {
                         Log.e("AppLockModule", "❌ No launch intent found for: $packageName")
-                        // Fallback: move to background
-                        moveTaskToBack(activity)
+                        // Fallback: just close our app
+                        currentActivity?.finishAndRemoveTask()
                     }
                 } catch (e: Exception) {
                     Log.e("AppLockModule", "❌ Error launching app: ${e.message}", e)
-                    // Fallback: move to background
-                    moveTaskToBack(activity)
+                    // Fallback: just close our app
+                    currentActivity?.finishAndRemoveTask()
                 }
             }
         } catch (e: Exception) {
@@ -160,39 +176,49 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
         }
     }
 
-    private fun temporarilyUnlockApp(packageName: String) {
+    @ReactMethod
+    fun temporarilyUnlockApp(packageName: String) {
         try {
-            // Store in SharedPreferences for accessibility service
+            Log.d("AppLockModule", "🔓 Temporarily unlocking app: $packageName")
+            
+            // Use in-memory unlock for immediate effect
+            AppAccessibilityService.temporarilyUnlockedApps.add(packageName)
+            
+            // Also store in SharedPreferences for persistence
             val prefs = reactContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
             val editor = prefs.edit()
-            val tempUnlockedApps = prefs.getStringSet("tempUnlockedApps", mutableSetOf()) ?: mutableSetOf()
+            
+            val currentTempUnlocked = prefs.getStringSet("tempUnlockedApps", mutableSetOf()) ?: mutableSetOf()
+            val tempUnlockedApps = HashSet<String>(currentTempUnlocked)
             tempUnlockedApps.add(packageName)
             editor.putStringSet("tempUnlockedApps", tempUnlockedApps)
             editor.apply()
-            Log.d("AppLockModule", "🔓 Temporarily unlocked app in SharedPreferences: $packageName")
             
-            // Remove after 10 seconds
-            Handler(Looper.getMainLooper()).postDelayed({
-                val updatedPrefs = reactContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
-                val updatedEditor = updatedPrefs.edit()
-                val updatedTempUnlockedApps = updatedPrefs.getStringSet("tempUnlockedApps", mutableSetOf()) ?: mutableSetOf()
-                updatedTempUnlockedApps.remove(packageName)
-                updatedEditor.putStringSet("tempUnlockedApps", updatedTempUnlockedApps)
-                updatedEditor.apply()
-                Log.d("AppLockModule", "⏰ Temporary unlock expired for: $packageName")
-            }, 10000)
+            Log.d("AppLockModule", "✅ Temporarily unlocked app: $packageName")
+            Log.d("AppLockModule", "📋 Current temp unlocked apps: $tempUnlockedApps")
+            
+            // Remove after 30 seconds (increased for safety)
+            handler.postDelayed({
+                try {
+                    AppAccessibilityService.temporarilyUnlockedApps.remove(packageName)
+                    
+                    val updatedPrefs = reactContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+                    val updatedEditor = updatedPrefs.edit()
+                    val currentSet = updatedPrefs.getStringSet("tempUnlockedApps", mutableSetOf()) ?: mutableSetOf()
+                    val updatedTempUnlockedApps = HashSet<String>(currentSet)
+                    
+                    updatedTempUnlockedApps.remove(packageName)
+                    updatedEditor.putStringSet("tempUnlockedApps", updatedTempUnlockedApps)
+                    updatedEditor.apply()
+                    
+                    Log.d("AppLockModule", "⏰ Temporary unlock expired for: $packageName")
+                    Log.d("AppLockModule", "📋 Remaining temp unlocked apps: $updatedTempUnlockedApps")
+                } catch (e: Exception) {
+                    Log.e("AppLockModule", "❌ Error removing temp unlock: ${e.message}")
+                }
+            }, 30000) // 30 seconds
         } catch (e: Exception) {
             Log.e("AppLockModule", "❌ Error temporarily unlocking app: ${e.message}")
-        }
-    }
-
-    private fun moveTaskToBack(activity: android.app.Activity?) {
-        try {
-            activity?.moveTaskToBack(true)
-            Log.d("AppLockModule", "📱 App moved to background")
-        } catch (e: Exception) {
-            Log.e("AppLockModule", "❌ Error moving app to background: ${e.message}")
-            activity?.finish()
         }
     }
 
@@ -201,11 +227,15 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
         try {
             val activity = currentActivity
             activity?.runOnUiThread {
-                moveTaskToBack(activity)
+                try {
+                    activity.finishAndRemoveTask()
+                    Log.d("AppLockModule", "✅ Lock screen closed")
+                } catch (e: Exception) {
+                    Log.e("AppLockModule", "❌ Error closing lock screen: ${e.message}")
+                }
             }
-            Log.d("AppLockModule", "✅ Lock screen closed")
         } catch (e: Exception) {
-            Log.e("AppLockModule", "❌ Error closing lock screen: ${e.message}")
+            Log.e("AppLockModule", "❌ Error in closeLockScreen: ${e.message}")
         }
     }
 
@@ -281,6 +311,122 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
         } catch (e: Exception) {
             Log.e("AppLockModule", "❌ Error setting locked apps: ${e.message}")
             promise.reject("SET_LOCKED_APPS_ERROR", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun getAutoLockNewApps(promise: Promise) {
+        try {
+            val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            val autoLockNewApps = prefs.getBoolean("autoLockNewApps", true)
+            Log.d("AppLockModule", "🔄 Auto-lock new apps setting: $autoLockNewApps")
+            promise.resolve(autoLockNewApps)
+        } catch (e: Exception) {
+            Log.e("AppLockModule", "❌ Error getting auto-lock setting: ${e.message}")
+            promise.reject("AUTO_LOCK_ERROR", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun setAutoLockNewApps(enabled: Boolean, promise: Promise) {
+        try {
+            val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            val editor = prefs.edit()
+            editor.putBoolean("autoLockNewApps", enabled)
+            editor.apply()
+            Log.d("AppLockModule", "🔄 Auto-lock new apps set to: $enabled")
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e("AppLockModule", "❌ Error setting auto-lock: ${e.message}")
+            promise.reject("SET_AUTO_LOCK_ERROR", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun addNewAppToLockedApps(packageName: String, promise: Promise) {
+        try {
+            val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            val autoLockNewApps = prefs.getBoolean("autoLockNewApps", true)
+            
+            if (autoLockNewApps) {
+                val lockedApps = prefs.getStringSet("lockedApps", mutableSetOf()) ?: mutableSetOf()
+                if (!lockedApps.contains(packageName)) {
+                    lockedApps.add(packageName)
+                    val editor = prefs.edit()
+                    editor.putStringSet("lockedApps", lockedApps)
+                    editor.apply()
+                    Log.d("AppLockModule", "🔒 Auto-locked new app: $packageName")
+                }
+            }
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e("AppLockModule", "❌ Error auto-locking new app: ${e.message}")
+            promise.reject("AUTO_LOCK_APP_ERROR", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun debugLockedApps(promise: Promise) {
+        try {
+            val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            val lockedApps = prefs.getStringSet("lockedApps", setOf()) ?: setOf()
+            val tempUnlockedApps = prefs.getStringSet("tempUnlockedApps", setOf()) ?: setOf()
+            
+            val result = WritableNativeMap().apply {
+                putArray("lockedApps", {
+                    val array = WritableNativeArray()
+                    lockedApps.forEach { array.pushString(it) }
+                    array
+                }())
+                putArray("tempUnlockedApps", {
+                    val array = WritableNativeArray()
+                    tempUnlockedApps.forEach { array.pushString(it) }
+                    array
+                }())
+                putArray("memoryUnlockedApps", {
+                    val array = WritableNativeArray()
+                    AppAccessibilityService.temporarilyUnlockedApps.forEach { array.pushString(it) }
+                    array
+                }())
+            }
+            
+            Log.d("AppLockModule", "🐛 DEBUG - Locked Apps: $lockedApps")
+            Log.d("AppLockModule", "🐛 DEBUG - Temp Unlocked Apps: $tempUnlockedApps")
+            Log.d("AppLockModule", "🐛 DEBUG - Memory Unlocked Apps: ${AppAccessibilityService.temporarilyUnlockedApps}")
+            
+            promise.resolve(result)
+        } catch (e: Exception) {
+            Log.e("AppLockModule", "❌ Error in debugLockedApps: ${e.message}")
+            promise.reject("DEBUG_ERROR", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun getInstalledAppsNotInLocked(promise: Promise) {
+        try {
+            val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            val lockedApps = prefs.getStringSet("lockedApps", setOf()) ?: setOf()
+            
+            val packageManager = reactApplicationContext.packageManager
+            val apps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+            val result = WritableNativeArray()
+
+            for (app in apps) {
+                // Skip system apps and our own app
+                if ((app.flags and ApplicationInfo.FLAG_SYSTEM == 0) && 
+                    app.packageName != "com.applock" &&
+                    !lockedApps.contains(app.packageName)) {
+                    
+                    val appInfo = WritableNativeMap()
+                    appInfo.putString("name", app.loadLabel(packageManager).toString())
+                    appInfo.putString("packageName", app.packageName)
+                    result.pushMap(appInfo)
+                }
+            }
+
+            promise.resolve(result)
+        } catch (e: Exception) {
+            promise.reject("UNLOCKED_APPS_ERROR", "Failed to get unlocked apps: ${e.message}")
         }
     }
 

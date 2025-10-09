@@ -4,13 +4,16 @@ import {
   Text,
   StyleSheet,
   Animated,
-  Easing,
   Dimensions,
   Image,
   Modal,
   AppState,
   BackHandler,
   NativeModules,
+  StatusBar,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import {TextInput, Button} from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -41,11 +44,11 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
 
   useEffect(() => {
     if (visible) {
+      console.log('🔒 LockScreen mounted for app:', appInfo?.packageName);
       setPin('');
       setError('');
       setIsLoading(false);
       loadFailedAttempts();
-      console.log('🔍 AppLockModule methods:', Object.keys(AppLockModule));
     }
   }, [visible, appInfo]);
 
@@ -53,17 +56,11 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
     try {
       const attempts = await AsyncStorage.getItem('failed_attempts');
       const lockUntilTime = await AsyncStorage.getItem('lock_until');
-
-      if (attempts) {
-        setFailedAttempts(parseInt(attempts, 10));
-      }
+      if (attempts) setFailedAttempts(parseInt(attempts, 10));
       if (lockUntilTime) {
         const lockTime = parseInt(lockUntilTime, 10);
-        if (Date.now() < lockTime) {
-          setLockUntil(lockTime);
-        } else {
-          await resetFailedAttempts();
-        }
+        if (Date.now() < lockTime) setLockUntil(lockTime);
+        else await resetFailedAttempts();
       }
     } catch (error) {
       console.error('Error loading failed attempts:', error);
@@ -83,7 +80,6 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
   const incrementFailedAttempts = async () => {
     const newFailedAttempts = failedAttempts + 1;
     setFailedAttempts(newFailedAttempts);
-
     if (newFailedAttempts >= 5) {
       const lockTime = Date.now() + 5 * 60 * 1000;
       setLockUntil(lockTime);
@@ -128,42 +124,26 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
       const credentials = await Keychain.getGenericPassword({
         service: 'applock_service',
       });
-
       console.log('📋 PIN verification result:', {
         hasCredentials: !!credentials,
-        storedPIN: credentials ? credentials.password : 'none',
         enteredPIN: pin,
       });
 
       if (credentials && credentials.password === pin) {
         console.log('✅ PIN verified successfully');
         await resetFailedAttempts();
-
-        if (appInfo?.packageName) {
-          console.log(
-            '🚀 Attempting to launch original app:',
-            appInfo.packageName,
-          );
-
-          if (typeof AppLockModule.launchApp === 'function') {
-            console.log('✅ launchApp method is available');
-            AppLockModule.launchApp(appInfo.packageName);
-          } else {
-            console.log(
-              '❌ launchApp method not available, using closeLockScreen',
-            );
-            AppLockModule.closeLockScreen();
-          }
-        } else {
-          console.log('❌ No package name available, using closeLockScreen');
+        if (onUnlock) {
+          console.log('🔄 Calling onUnlock callback');
+          onUnlock();
+        } else if (
+          AppLockModule &&
+          typeof AppLockModule.closeLockScreen === 'function'
+        ) {
           AppLockModule.closeLockScreen();
         }
-
-        onUnlock();
       } else {
         console.log('❌ Invalid PIN');
         await incrementFailedAttempts();
-
         const remainingAttempts = 5 - (failedAttempts + 1);
         if (remainingAttempts > 0) {
           setError(
@@ -174,8 +154,8 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
         } else {
           setError(t('lock_screen.too_many_attempts', {minutes: 5}));
         }
-
         setPin('');
+        // Shake animation
         Animated.sequence([
           Animated.timing(shakeAnim, {
             toValue: 10,
@@ -211,13 +191,10 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
     try {
       const securityQuestion = await AsyncStorage.getItem('security_question');
       const securityAnswer = await AsyncStorage.getItem('security_answer');
-
       if (securityQuestion && securityAnswer) {
         console.log('🔄 Calling onForgotPin prop - Security Q&A exists');
-        if (onForgotPin) {
-          onForgotPin();
-        }
-        onClose();
+        if (onForgotPin) onForgotPin();
+        if (onClose) onClose();
       } else {
         console.log('🔄 No security Q&A - showing reset confirmation');
         showAlert(
@@ -225,18 +202,13 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
           t('forgot_pin.reset_warning'),
           'warning',
           [
-            {
-              text: t('common.cancel'),
-              style: 'cancel',
-            },
+            {text: t('common.cancel'), style: 'cancel'},
             {
               text: t('alerts.reset'),
               onPress: async () => {
                 try {
                   console.log('🔄 User confirmed reset - calling onForgotPin');
-                  if (onForgotPin) {
-                    onForgotPin();
-                  }
+                  if (onForgotPin) onForgotPin();
                 } catch (error) {
                   console.error('Error in reset confirmation:', error);
                   showAlert(
@@ -259,7 +231,13 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
   useEffect(() => {
     const backHandler = BackHandler.addEventListener(
       'hardwareBackPress',
-      () => visible,
+      () => {
+        if (visible) {
+          console.log('🔒 Back button blocked in lock screen');
+          return true;
+        }
+        return false;
+      },
     );
     return () => backHandler.remove();
   }, [visible]);
@@ -272,13 +250,19 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
       transparent={false}
       animationType="fade"
       hardwareAccelerated
-      statusBarTranslucent
-      onRequestClose={() => {
-        if (visible) {
-          return;
-        }
-      }}>
-      <View style={styles.container}>
+      statusBarTranslucent={false}
+      onRequestClose={() => console.log('🔒 Lock screen back button pressed')}
+      // CRITICAL FIX: Add these modal props to ensure touch works
+      presentationStyle="fullScreen"
+      supportedOrientations={['portrait', 'landscape']}>
+      {/* FIX: Use Pressable instead of TouchableWithoutFeedback for better touch handling */}
+      <View style={styles.container} pointerEvents="box-none">
+        <StatusBar
+          backgroundColor="#FFFFFF"
+          barStyle="dark-content"
+          translucent={false}
+        />
+
         <View style={styles.adContainer}>
           <BannerAd
             unitId={adUnitId}
@@ -286,7 +270,8 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
           />
         </View>
 
-        <View style={styles.content}>
+        {/* FIX: Make content area touchable */}
+        <View style={styles.content} pointerEvents="auto">
           <Animated.View
             style={[
               styles.appIconContainer,
@@ -343,7 +328,11 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
               underlineColor="transparent"
               selectionColor="#1E88E5"
               theme={{
-                colors: {primary: '#1E88E5', text: '#333', placeholder: '#888'},
+                colors: {
+                  primary: '#1E88E5',
+                  text: '#333',
+                  placeholder: '#888',
+                },
               }}
               editable={!lockUntil || Date.now() >= lockUntil}
               placeholder={t('setup.enter_pin')}
@@ -354,6 +343,8 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
                   color="#1E88E5"
                 />
               }
+              // FIX: Ensure text input is touchable
+              pointerEvents="auto"
             />
           </Animated.View>
 
@@ -369,7 +360,9 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
               (lockUntil && Date.now() < lockUntil)
             }
             loading={isLoading}
-            labelStyle={styles.unlockButtonLabel}>
+            labelStyle={styles.unlockButtonLabel}
+            // FIX: Ensure button is touchable
+            pointerEvents="auto">
             {t('lock_screen.unlock')}
           </Button>
 
@@ -377,7 +370,9 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
             mode="text"
             onPress={handleForgotPin}
             style={styles.forgotButton}
-            labelStyle={styles.forgotButtonLabel}>
+            labelStyle={styles.forgotButtonLabel}
+            // FIX: Ensure button is touchable
+            pointerEvents="auto">
             {t('lock_screen.forgot_pin')}
           </Button>
         </View>
@@ -403,13 +398,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   adContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 10,
     backgroundColor: '#FFFFFF',
-    marginTop: 20,
   },
   content: {
     flex: 1,

@@ -11,12 +11,20 @@ import {
   Image,
   LogBox,
 } from 'react-native';
-import {Searchbar, Appbar, Card} from 'react-native-paper';
+import {
+  Searchbar,
+  Appbar,
+  Card,
+  Button,
+  Switch as PaperSwitch,
+} from 'react-native-paper';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import {useTranslation} from 'react-i18next';
 import {NativeModules} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useAlert} from '../contexts/AlertContext';
+import {RefreshControl, ScrollView} from 'react-native-gesture-handler';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const {AppListModule, AppLockModule} = NativeModules;
 const {width} = Dimensions.get('window');
@@ -34,11 +42,13 @@ const HomeScreen = () => {
   const [filteredApps, setFilteredApps] = useState([]);
   const [lockedApps, setLockedApps] = useState(new Set());
   const [scaleAnim] = useState(new Animated.Value(1));
-  const [refreshing, setRefreshing] = useState(false);
+  const [autoLockNewApps, setAutoLockNewApps] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useFocusEffect(
     React.useCallback(() => {
       console.log('🏠 HomeScreen focused - refreshing data');
+      loadSettings();
       loadLockedApps();
       loadInstalledApps();
     }, []),
@@ -46,12 +56,9 @@ const HomeScreen = () => {
 
   useEffect(() => {
     console.log('🏠 HomeScreen mounted');
+    loadSettings();
     loadInstalledApps();
     loadLockedApps();
-
-    return () => {
-      console.log('🏠 HomeScreen unmounted');
-    };
   }, []);
 
   useEffect(() => {
@@ -65,6 +72,32 @@ const HomeScreen = () => {
       );
     }
   }, [searchQuery, apps]);
+
+  const loadSettings = async () => {
+    try {
+      const autoLock = await AppLockModule.getAutoLockNewApps();
+      setAutoLockNewApps(autoLock);
+      console.log('🔄 Auto-lock new apps setting:', autoLock);
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    }
+  };
+
+  const toggleAutoLockNewApps = async () => {
+    const newValue = !autoLockNewApps;
+    try {
+      await AppLockModule.setAutoLockNewApps(newValue);
+      setAutoLockNewApps(newValue);
+      showAlert(
+        t('alerts.success'),
+        newValue ? t('home.auto_lock_enabled') : t('home.auto_lock_disabled'),
+        'success',
+      );
+    } catch (error) {
+      console.error('Error toggling auto-lock:', error);
+      showAlert(t('alerts.error'), t('errors.setting_update_failed'), 'error');
+    }
+  };
 
   const loadLockedApps = async () => {
     try {
@@ -92,7 +125,7 @@ const HomeScreen = () => {
               packageName = item.packageName;
             }
 
-            if (packageName && packageName !== OUR_APP_PACKAGE) {
+            if (packageName) {
               lockedSet.add(packageName);
             }
           });
@@ -122,9 +155,7 @@ const HomeScreen = () => {
 
   const saveLockedApps = async appsSet => {
     try {
-      const filteredApps = Array.from(appsSet).filter(
-        pkg => pkg !== OUR_APP_PACKAGE,
-      );
+      const filteredApps = Array.from(appsSet);
       console.log('💾 Saving locked apps:', filteredApps);
 
       await AsyncStorage.setItem('lockedApps', JSON.stringify(filteredApps));
@@ -140,6 +171,7 @@ const HomeScreen = () => {
 
   const loadInstalledApps = async () => {
     try {
+      setIsRefreshing(true);
       console.log('📱 Loading installed apps...');
       const installedApps = await AppListModule.getInstalledApps();
       console.log(`📱 Loaded ${installedApps.length} apps`);
@@ -152,7 +184,7 @@ const HomeScreen = () => {
           const lockedArray = JSON.parse(currentLockedApps);
           lockedArray.forEach(item => {
             const pkg = typeof item === 'string' ? item : item.packageName;
-            if (pkg && pkg !== OUR_APP_PACKAGE) {
+            if (pkg) {
               lockedSet.add(pkg);
             }
           });
@@ -163,9 +195,6 @@ const HomeScreen = () => {
 
       const appsWithLockStatus = installedApps
         .filter(app => {
-          if (app.packageName === OUR_APP_PACKAGE) {
-            return false;
-          }
           const systemApps = [
             'android',
             'com.android',
@@ -192,15 +221,13 @@ const HomeScreen = () => {
       setLockedApps(lockedSet);
     } catch (error) {
       console.error('❌ Error loading apps:', error);
+      showAlert(t('alerts.error'), t('errors.operation_failed'), 'error');
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
   const toggleAppLock = async (appId, appPackageName, appName) => {
-    if (appPackageName === OUR_APP_PACKAGE) {
-      showAlert(t('alerts.cannot_lock'), t('home.cannot_lock_self'), 'warning');
-      return;
-    }
-
     console.log(`🔐 Toggling lock for: ${appPackageName} (${appName})`);
 
     Animated.sequence([
@@ -238,6 +265,107 @@ const HomeScreen = () => {
     setLockedApps(newLockedApps);
 
     await saveLockedApps(newLockedApps);
+
+    // Show security warning when locking our own app
+    if (appPackageName === OUR_APP_PACKAGE && !isCurrentlyLocked) {
+      showAlert(
+        t('alerts.success'),
+        t('home.security_enabled_message'),
+        'info',
+      );
+    }
+  };
+
+  const lockAllApps = async () => {
+    showAlert(
+      t('alerts.lock_all_apps'),
+      t('home.lock_all_confirmation'),
+      'warning',
+      [
+        {
+          text: t('common.cancel'),
+          style: 'cancel',
+        },
+        {
+          text: t('alerts.lock_all'),
+          onPress: async () => {
+            try {
+              const allPackageNames = apps.map(app => app.packageName);
+              const newLockedApps = new Set([
+                ...lockedApps,
+                ...allPackageNames,
+              ]);
+              await saveLockedApps(newLockedApps);
+
+              const updatedApps = apps.map(app => ({
+                ...app,
+                locked: true,
+              }));
+              setApps(updatedApps);
+              setFilteredApps(updatedApps);
+
+              showAlert(
+                t('alerts.success'),
+                t('home.all_apps_locked'),
+                'success',
+              );
+            } catch (error) {
+              console.error('Error locking all apps:', error);
+              showAlert(
+                t('alerts.error'),
+                t('errors.operation_failed'),
+                'error',
+              );
+            }
+          },
+          style: 'destructive',
+        },
+      ],
+    );
+  };
+
+  const unlockAllApps = async () => {
+    showAlert(
+      t('alerts.unlock_all_apps'),
+      t('home.unlock_all_confirmation'),
+      'warning',
+      [
+        {
+          text: t('common.cancel'),
+          style: 'cancel',
+        },
+        {
+          text: t('alerts.unlock_all'),
+          onPress: async () => {
+            try {
+              const newLockedApps = new Set();
+              await saveLockedApps(newLockedApps);
+
+              const updatedApps = apps.map(app => ({
+                ...app,
+                locked: false,
+              }));
+              setApps(updatedApps);
+              setFilteredApps(updatedApps);
+
+              showAlert(
+                t('alerts.success'),
+                t('home.all_apps_unlocked'),
+                'success',
+              );
+            } catch (error) {
+              console.error('Error unlocking all apps:', error);
+              showAlert(
+                t('alerts.error'),
+                t('errors.operation_failed'),
+                'error',
+              );
+            }
+          },
+          style: 'default',
+        },
+      ],
+    );
   };
 
   const renderAppItem = ({item}) => (
@@ -247,18 +375,26 @@ const HomeScreen = () => {
           {item.icon ? (
             <Image source={{uri: item.icon}} style={styles.appIcon} />
           ) : (
-            <View style={styles.placeholderIcon} />
+            <View style={styles.placeholderIcon}>
+              <Icon name="android" size={20} color="#666" />
+            </View>
           )}
         </View>
         <View style={styles.appDetails}>
           <Text style={styles.appName} numberOfLines={1}>
             {item.name}
+            {item.packageName === OUR_APP_PACKAGE && (
+              <Text style={styles.ourAppBadge}> ({t('home.this_app')})</Text>
+            )}
           </Text>
           {/* <Text style={styles.packageName} numberOfLines={1}>
             {item.packageName}
           </Text> */}
           {item.locked && (
-            <Text style={styles.lockedBadge}>🔒 {t('home.app_locked')}</Text>
+            <View style={styles.lockedBadge}>
+              <Icon name="lock" size={12} color="#1E88E5" />
+              <Text style={styles.lockedBadgeText}>{t('home.app_locked')}</Text>
+            </View>
           )}
         </View>
       </View>
@@ -267,8 +403,9 @@ const HomeScreen = () => {
         onValueChange={() =>
           toggleAppLock(item.id, item.packageName, item.name)
         }
-        thumbColor={item.locked ? '#42A5F5' : '#f4f3f4'}
+        thumbColor={item.locked ? '#1E88E5' : '#f4f3f4'}
         trackColor={{false: '#767577', true: '#BBDEFB'}}
+        ios_backgroundColor="#767577"
       />
     </Animated.View>
   );
@@ -277,7 +414,7 @@ const HomeScreen = () => {
 
   return (
     <View style={styles.container}>
-      <Appbar.Header style={styles.header}>
+      <Appbar.Header style={[styles.header, {height: 48}]}>
         <Appbar.Content
           title={t('home.title')}
           titleStyle={styles.headerTitle}
@@ -288,7 +425,7 @@ const HomeScreen = () => {
             console.log('⚙️ Settings button pressed');
             navigation.navigate('Settings');
           }}
-          color="#42A5F5"
+          color="#1E88E5"
         />
         <Appbar.Action
           icon="refresh"
@@ -297,54 +434,190 @@ const HomeScreen = () => {
             loadInstalledApps();
             loadLockedApps();
           }}
-          color="#42A5F5"
+          color="#1E88E5"
+          disabled={isRefreshing}
         />
       </Appbar.Header>
 
-      <View style={styles.content}>
-        <Card style={styles.statsCard}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={loadInstalledApps}
+            colors={['#1E88E5']}
+            tintColor="#1E88E5"
+          />
+        }>
+        {/* Security Warning Card */}
+        {!lockedApps.has(OUR_APP_PACKAGE) && (
+          <Card style={styles.securityWarningCard}>
+            <Card.Content>
+              <View style={styles.securityWarningHeader}>
+                <Icon name="shield-alert" size={24} color="#E65100" />
+                <Text style={styles.securityWarningTitle}>
+                  {t('home.security_recommendation')}
+                </Text>
+              </View>
+              <Text style={styles.securityWarningText}>
+                {t('home.security_recommendation_desc')}
+              </Text>
+            </Card.Content>
+          </Card>
+        )}
+
+        {/* Stats Cards */}
+        <View style={styles.statsContainer}>
+          <View style={styles.statItem}>
+            <View style={[styles.statIcon, styles.lockedStat]}>
+              <Icon name="lock" size={20} color="#FFFFFF" />
+            </View>
+            <View style={styles.statText}>
+              <Text style={styles.statNumber}>{lockedAppsCount}</Text>
+              <Text style={styles.statLabel}>{t('home.locked_apps')}</Text>
+            </View>
+          </View>
+
+          <View style={styles.statItem}>
+            <View style={[styles.statIcon, styles.totalStat]}>
+              <Icon name="apps" size={20} color="#FFFFFF" />
+            </View>
+            <View style={styles.statText}>
+              <Text style={styles.statNumber}>{apps.length}</Text>
+              <Text style={styles.statLabel}>{t('home.total_apps')}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Auto-lock Settings */}
+        <Card style={styles.settingsCard}>
           <Card.Content>
-            <View style={styles.statsContainer}>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{lockedAppsCount}</Text>
-                <Text style={styles.statLabel}>{t('home.locked_apps')}</Text>
+            <View style={styles.settingItem}>
+              <View style={styles.settingInfo}>
+                <Icon
+                  name="lock-plus"
+                  size={20}
+                  color="#1E88E5"
+                  style={styles.settingIcon}
+                />
+                <View style={styles.settingText}>
+                  <Text style={styles.settingTitle}>
+                    {t('home.auto_lock_new_apps')}
+                  </Text>
+                  <Text style={styles.settingDescription}>
+                    {t('home.auto_lock_description')}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>{apps.length}</Text>
-                <Text style={styles.statLabel}>{t('home.total_apps')}</Text>
-              </View>
+              <PaperSwitch
+                value={autoLockNewApps}
+                onValueChange={toggleAutoLockNewApps}
+                color="#1E88E5"
+              />
             </View>
           </Card.Content>
         </Card>
 
-        <View style={styles.infoBox}>
-          <Text style={styles.infoText}>{t('home.testing_instructions')}</Text>
-        </View>
-
-        <Searchbar
-          placeholder={t('home.search_placeholder')}
-          onChangeText={setSearchQuery}
-          value={searchQuery}
-          style={styles.searchBar}
-          iconColor="#42A5F5"
-          inputStyle={styles.searchInput}
-          placeholderTextColor="#888"
-        />
-
-        <FlatList
-          data={filteredApps}
-          renderItem={renderAppItem}
-          keyExtractor={item => item.id}
-          style={styles.appList}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>{t('home.no_apps_found')}</Text>
+        {/* Quick Actions */}
+        <Card style={styles.actionsCard}>
+          <Card.Content>
+            <Text style={styles.actionsTitle}>{t('home.quick_actions')}</Text>
+            <View style={styles.quickActions}>
+              <Button
+                mode="contained"
+                onPress={lockAllApps}
+                style={[styles.quickActionButton, styles.lockAllButton]}
+                icon="lock"
+                labelStyle={styles.quickActionLabel}
+                compact>
+                {t('home.lock_all')}
+              </Button>
+              <Button
+                mode="outlined"
+                onPress={unlockAllApps}
+                style={[styles.quickActionButton, styles.unlockAllButton]}
+                icon="lock-open"
+                labelStyle={styles.quickActionLabel}
+                compact>
+                {t('home.unlock_all')}
+              </Button>
             </View>
-          }
-        />
-      </View>
+          </Card.Content>
+        </Card>
+
+        {/* Search Bar */}
+        <Card style={styles.searchCard}>
+          <Card.Content>
+            <Searchbar
+              placeholder={t('home.search_placeholder')}
+              onChangeText={setSearchQuery}
+              value={searchQuery}
+              style={styles.searchBar}
+              iconColor="#1E88E5"
+              inputStyle={styles.searchInput}
+              placeholderTextColor="#888"
+              elevation={0}
+            />
+          </Card.Content>
+        </Card>
+
+        {/* Apps List */}
+        <Card style={styles.appsCard}>
+          <Card.Content>
+            <View style={styles.appsHeader}>
+              <Text style={styles.appsTitle}>{t('home.installed_apps')}</Text>
+              <Text
+                style={
+                  apps.length === 0 ? styles.appsCountEmpty : styles.appsCount
+                }>
+                {filteredApps.length} {t('home.apps')}
+              </Text>
+            </View>
+
+            {filteredApps.length > 0 ? (
+              <FlatList
+                data={filteredApps}
+                renderItem={renderAppItem}
+                keyExtractor={item => item.id}
+                style={styles.appList}
+                scrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+                nestedScrollEnabled={true}
+                initialNumToRender={20} // Add this for better performance
+                maxToRenderPerBatch={20} // Add this
+                windowSize={10} // Add this
+                removeClippedSubviews={false} // Add this
+                getItemLayout={(data, index) => ({
+                  length: 80, // Approximate height of each item
+                  offset: 80 * index,
+                  index,
+                })}
+                ItemSeparatorComponent={() => <View style={styles.separator} />}
+              />
+            ) : (
+              <View style={styles.emptyContainer}>
+                <Icon name="magnify" size={64} color="#BDBDBD" />
+                <Text style={styles.emptyTitle}>{t('home.no_apps_found')}</Text>
+                <Text style={styles.emptyText}>
+                  {searchQuery
+                    ? t('home.no_search_results')
+                    : t('home.no_apps_available')}
+                </Text>
+                {searchQuery && (
+                  <Button
+                    mode="text"
+                    onPress={() => setSearchQuery('')}
+                    style={styles.clearSearchButton}
+                    labelStyle={styles.clearSearchLabel}>
+                    {t('home.clear_search')}
+                  </Button>
+                )}
+              </View>
+            )}
+          </Card.Content>
+        </Card>
+      </ScrollView>
     </View>
   );
 };
@@ -352,7 +625,7 @@ const HomeScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F8F9FA',
   },
   header: {
     backgroundColor: '#FFFFFF',
@@ -363,89 +636,188 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#42A5F5',
+    color: '#1E88E5',
   },
   content: {
     flex: 1,
-    padding: 16,
   },
-  statsCard: {
+  securityWarningCard: {
+    margin: 16,
+    marginBottom: 12,
+    borderRadius: 16,
+    backgroundColor: '#FFF3E0',
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+  },
+  securityWarningHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  securityWarningTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#E65100',
+    marginLeft: 8,
+  },
+  securityWarningText: {
+    fontSize: 14,
+    color: '#E65100',
+    lineHeight: 18,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    gap: 12,
+    marginTop: 20,
+  },
+  statCard: {
+    flex: 1,
+    borderRadius: 16,
+    elevation: 2,
+  },
+  lockedCard: {
+    backgroundColor: '#E3F2FD',
+  },
+  totalCard: {
+    backgroundColor: '#E8F5E9',
+  },
+  statCardContent: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  statNumber: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#1E88E5',
+    marginTop: 8,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  settingsCard: {
+    marginHorizontal: 16,
     marginBottom: 16,
     borderRadius: 16,
     backgroundColor: '#FFFFFF',
-    elevation: 4,
-    shadowColor: '#42A5F5',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    elevation: 2,
   },
-  infoBox: {
-    backgroundColor: '#E3F2FD',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: '#42A5F5',
-  },
-  infoText: {
-    fontSize: 14,
-    color: '#1565C0',
-    lineHeight: 20,
-  },
-  statsContainer: {
+  settingItem: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  statItem: {
+  settingInfo: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#42A5F5',
+  settingIcon: {
+    marginRight: 12,
   },
-  statLabel: {
-    fontSize: 14,
+  settingText: {
+    flex: 1,
+  },
+  settingTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 2,
+  },
+  settingDescription: {
+    fontSize: 12,
     color: '#666',
-    marginTop: 4,
+    lineHeight: 16,
   },
-  statDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: '#E0E0E0',
-  },
-  searchBar: {
+  actionsCard: {
+    marginHorizontal: 16,
     marginBottom: 16,
-    borderRadius: 12,
+    borderRadius: 16,
     backgroundColor: '#FFFFFF',
     elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+  },
+  actionsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
+  },
+  quickActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  quickActionButton: {
+    flex: 1,
+    borderRadius: 12,
+  },
+  lockAllButton: {
+    backgroundColor: '#1E88E5',
+  },
+  unlockAllButton: {
+    borderColor: '#1E88E5',
+  },
+  quickActionLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  searchCard: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    elevation: 2,
+  },
+  searchBar: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    elevation: 0,
   },
   searchInput: {
     color: '#333',
+    fontSize: 14,
+  },
+  appsCard: {
+    marginHorizontal: 16,
+    marginBottom: 24,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    elevation: 2,
+  },
+  appsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  appsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  appsCount: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  appsCountEmpty: {
+    fontSize: 14,
+    color: '#BDBDBD',
+    fontWeight: '500',
   },
   appList: {
-    flex: 1,
+    maxHeight: 400,
   },
   appItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    marginBottom: 12,
-    backgroundColor: 'white',
-    borderRadius: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    paddingVertical: 12,
   },
   appInfo: {
     flex: 1,
@@ -453,24 +825,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   appIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: '#E3F2FD',
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#F5F5F5',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
   },
   appIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 5,
+    width: 28,
+    height: 28,
+    borderRadius: 6,
   },
   placeholderIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 5,
-    backgroundColor: '#BBDEFB',
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   appDetails: {
     flex: 1,
@@ -479,28 +852,112 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
+    marginBottom: 2,
   },
   packageName: {
     fontSize: 12,
     color: '#888',
-    marginTop: 2,
+    marginBottom: 4,
+  },
+  ourAppBadge: {
+    fontSize: 12,
+    color: '#1E88E5',
+    fontStyle: 'italic',
   },
   lockedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E3F2FD',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  lockedBadgeText: {
     fontSize: 10,
-    color: '#42A5F5',
-    marginTop: 4,
+    color: '#1E88E5',
     fontWeight: '600',
+    marginLeft: 4,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: '#F0F0F0',
+    marginVertical: 8,
   },
   emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    padding: 40,
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 16,
+    marginBottom: 8,
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#888',
     textAlign: 'center',
+    lineHeight: 20,
+  },
+  clearSearchButton: {
+    marginTop: 10,
+  },
+  clearSearchLabel: {
+    color: '#1E88E5',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginHorizontal: 16,
+    marginBottom: 16,
+    marginTop: 12,
+    gap: 12,
+  },
+  statItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    elevation: 2,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+  },
+  statIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  lockedStat: {
+    backgroundColor: '#1E88E5',
+  },
+  totalStat: {
+    backgroundColor: '#43A047',
+  },
+  statText: {
+    flex: 1,
+  },
+  statNumber: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  statLabel: {
+    fontSize: 13,
+    color: '#777',
+    fontWeight: '500',
   },
 });
 

@@ -1,3 +1,4 @@
+// Enhanced CustomAlert.js
 import React, {useEffect, useRef} from 'react';
 import {
   View,
@@ -6,15 +7,17 @@ import {
   Modal,
   TouchableOpacity,
   Animated,
-  Easing,
+  Dimensions,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+
+const {width} = Dimensions.get('window');
 
 const CustomAlert = ({
   visible,
   title,
   message,
-  type = 'info', // 'info', 'success', 'warning', 'error'
+  type = 'info',
   buttons = [],
   onClose,
 }) => {
@@ -33,6 +36,19 @@ const CustomAlert = ({
         Animated.timing(fadeAnim, {
           toValue: 1,
           duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(scaleAnim, {
+          toValue: 0.8,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 150,
           useNativeDriver: true,
         }),
       ]).start();
@@ -65,12 +81,25 @@ const CustomAlert = ({
     }
   };
 
+  const getBorderColor = () => {
+    switch (type) {
+      case 'success':
+        return '#4CAF50';
+      case 'warning':
+        return '#FF9800';
+      case 'error':
+        return '#F44336';
+      default:
+        return '#2196F3';
+    }
+  };
+
   const iconConfig = getIconConfig();
 
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="none">
+    <Modal visible={visible} transparent animationType="fade">
       <View style={styles.overlay}>
         <Animated.View
           style={[
@@ -79,6 +108,7 @@ const CustomAlert = ({
               transform: [{scale: scaleAnim}],
               opacity: fadeAnim,
               backgroundColor: getBackgroundColor(),
+              borderLeftColor: getBorderColor(),
             },
           ]}>
           <View style={styles.header}>
@@ -89,10 +119,11 @@ const CustomAlert = ({
               ]}>
               <Icon name={iconConfig.name} size={32} color={iconConfig.color} />
             </View>
-            <Text style={styles.title}>{title}</Text>
+            <View style={styles.titleContainer}>
+              <Text style={styles.title}>{title}</Text>
+              <Text style={styles.message}>{message}</Text>
+            </View>
           </View>
-
-          <Text style={styles.message}>{message}</Text>
 
           <View style={styles.buttonContainer}>
             {buttons.map((button, index) => (
@@ -102,6 +133,7 @@ const CustomAlert = ({
                   styles.button,
                   button.style === 'cancel' && styles.cancelButton,
                   button.style === 'destructive' && styles.destructiveButton,
+                  buttons.length > 2 && styles.multiButton,
                 ]}
                 onPress={() => {
                   button.onPress && button.onPress();
@@ -128,26 +160,27 @@ const CustomAlert = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   alertContainer: {
     width: '100%',
-    maxWidth: 340,
+    maxWidth: 400,
     borderRadius: 20,
-    padding: 25,
+    padding: 0,
     elevation: 10,
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 10},
     shadowOpacity: 0.3,
     shadowRadius: 20,
+    borderLeftWidth: 6,
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 15,
+    padding: 25,
+    paddingBottom: 20,
   },
   iconContainer: {
     width: 50,
@@ -157,21 +190,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 15,
   },
+  titleContainer: {
+    flex: 1,
+  },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
-    flex: 1,
+    marginBottom: 8,
   },
   message: {
     fontSize: 16,
     color: '#666',
     lineHeight: 22,
-    marginBottom: 20,
   },
   buttonContainer: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    padding: 16,
+    paddingTop: 8,
     gap: 10,
   },
   button: {
@@ -180,6 +217,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: '#1E88E5',
     minWidth: 80,
+  },
+  multiButton: {
+    flex: 1,
   },
   cancelButton: {
     backgroundColor: 'transparent',

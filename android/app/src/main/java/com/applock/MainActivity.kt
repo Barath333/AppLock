@@ -3,7 +3,8 @@ package com.applock
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
-import android.view.WindowManager
+import android.content.Context
+import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
 import com.facebook.react.ReactActivity
@@ -12,8 +13,6 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.modules.core.DeviceEventManagerModule
-import android.content.SharedPreferences
-import android.content.Context
 
 class MainActivity : ReactActivity() {
     private var isLockScreenMode = false
@@ -21,17 +20,20 @@ class MainActivity : ReactActivity() {
     private var lockedPackageName: String? = null
     private var lockedClassName: String? = null
     private var isReactNativeReady = false
-    private val handler = Handler(Looper.getMainLooper())
     private var hasSentLockEvent = false
+    private lateinit var prefs: SharedPreferences
+    private val handler = Handler(Looper.getMainLooper())
 
     companion object {
         private const val TAG = "AppLockDebug"
+        private const val OUR_APP_PACKAGE = "com.applock"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d(TAG, "🏠 MainActivity onCreate")
-        Log.d(TAG, "📦 Package: $packageName")
+        
+        prefs = getSharedPreferences("AppLock", Context.MODE_PRIVATE)
         
         // Handle intent immediately
         handleLockedIntent(intent)
@@ -50,6 +52,16 @@ class MainActivity : ReactActivity() {
         
         // Check if we need to send lock event
         checkAndSendLockEvent()
+        
+        // If we're in lock screen mode but haven't shown it yet, set it up
+        if (isLockScreenMode && shouldShowLockScreen) {
+            setupAsLockScreen()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        Log.d(TAG, "⏸️ MainActivity onPause")
     }
 
     private fun handleLockedIntent(intent: Intent?) {
@@ -78,32 +90,38 @@ class MainActivity : ReactActivity() {
             Log.d(TAG, "⏳ Stored locked app info for React Native: $lockedPackage")
         } else {
             Log.d(TAG, "📭 Regular App Mode")
-            isLockScreenMode = false
-            shouldShowLockScreen = false
-            lockedPackageName = null
-            lockedClassName = null
-            hasSentLockEvent = false
-            clearLockScreenFlags()
+            // Clear any pending lock screen state if not in lock screen mode
+            if (!isLockScreenMode) {
+                clearLockScreenState()
+            }
         }
     }
 
-   private fun storePendingLockedApp(packageName: String, className: String?) {
-    try {
-        val prefs = getSharedPreferences("AppLock", Context.MODE_PRIVATE)
-        val editor = prefs.edit()
-        editor.putString("pendingLockedPackage", packageName)
-        editor.putString("pendingLockedClass", className ?: "")
-        editor.putLong("pendingLockedTimestamp", System.currentTimeMillis())
-        editor.apply()
-        Log.d(TAG, "💾 Stored pending locked app: $packageName")
-        
-        // Also set a flag to indicate we're in lock screen mode
-        editor.putBoolean("isLockScreenMode", true)
-        editor.apply()
-    } catch (e: Exception) {
-        Log.e(TAG, "❌ Error storing pending locked app: ${e.message}")
+    private fun storePendingLockedApp(packageName: String, className: String?) {
+        try {
+            val editor = prefs.edit()
+            editor.putString("pendingLockedPackage", packageName)
+            editor.putString("pendingLockedClass", className ?: "")
+            editor.putLong("pendingLockedTimestamp", System.currentTimeMillis())
+            editor.apply()
+            Log.d(TAG, "💾 Stored pending locked app: $packageName")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error storing pending locked app: ${e.message}")
+        }
     }
-}
+
+    private fun clearLockScreenState() {
+        try {
+            val editor = prefs.edit()
+            editor.remove("pendingLockedPackage")
+            editor.remove("pendingLockedClass")
+            editor.remove("pendingLockedTimestamp")
+            editor.apply()
+            Log.d(TAG, "🧹 Cleared lock screen state")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error clearing lock screen state: ${e.message}")
+        }
+    }
 
     private fun checkAndSendLockEvent() {
         if (shouldShowLockScreen && lockedPackageName != null && !hasSentLockEvent) {
@@ -126,37 +144,13 @@ class MainActivity : ReactActivity() {
         try {
             Log.d(TAG, "🛡️ Setting up as Lock Screen")
             
-            // Clear any existing flags first
-            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            // For modern Android (SDK 30+), use these flags to show over lock screen
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
             
-            // Add flags to make it overlay and show on top
-            window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
-            window.addFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD)
-            window.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
-            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-            window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
-            window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
-            
-            Log.d(TAG, "✅ Lock Screen Flags Applied")
-            
+            Log.d(TAG, "✅ Lock screen setup complete")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error setting up lock screen: ${e.message}", e)
-        }
-    }
-
-    private fun clearLockScreenFlags() {
-        try {
-            Log.d(TAG, "🧹 Clearing lock screen flags")
-            window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
-            window.clearFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD)
-            window.clearFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
-            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-            window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
-            window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error clearing lock screen flags: ${e.message}")
         }
     }
 
