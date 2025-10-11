@@ -12,8 +12,7 @@ import {
   NativeModules,
   StatusBar,
   Platform,
-  TouchableWithoutFeedback,
-  Keyboard,
+  TouchableOpacity,
 } from 'react-native';
 import {TextInput, Button} from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -49,6 +48,11 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
       setError('');
       setIsLoading(false);
       loadFailedAttempts();
+
+      // Ensure the app is brought to front when lock screen becomes visible
+      setTimeout(() => {
+        AppLockModule.bringToFront();
+      }, 100);
     }
   }, [visible, appInfo]);
 
@@ -252,11 +256,10 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
       hardwareAccelerated
       statusBarTranslucent={false}
       onRequestClose={() => console.log('🔒 Lock screen back button pressed')}
-      // CRITICAL FIX: Add these modal props to ensure touch works
       presentationStyle="fullScreen"
       supportedOrientations={['portrait', 'landscape']}>
-      {/* FIX: Use Pressable instead of TouchableWithoutFeedback for better touch handling */}
-      <View style={styles.container} pointerEvents="box-none">
+      {/* FIX: Use View instead of TouchableWithoutFeedback for better performance */}
+      <View style={styles.container}>
         <StatusBar
           backgroundColor="#FFFFFF"
           barStyle="dark-content"
@@ -270,8 +273,7 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
           />
         </View>
 
-        {/* FIX: Make content area touchable */}
-        <View style={styles.content} pointerEvents="auto">
+        <View style={styles.content}>
           <Animated.View
             style={[
               styles.appIconContainer,
@@ -343,38 +345,38 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
                   color="#1E88E5"
                 />
               }
-              // FIX: Ensure text input is touchable
-              pointerEvents="auto"
+              autoFocus={true} // Auto focus for better UX
             />
           </Animated.View>
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
-          <Button
-            mode="contained"
+          <TouchableOpacity
             onPress={handleUnlock}
-            style={styles.unlockButton}
             disabled={
               pin.length < 4 ||
               isLoading ||
               (lockUntil && Date.now() < lockUntil)
             }
-            loading={isLoading}
-            labelStyle={styles.unlockButtonLabel}
-            // FIX: Ensure button is touchable
-            pointerEvents="auto">
-            {t('lock_screen.unlock')}
-          </Button>
+            style={[
+              styles.unlockButton,
+              (pin.length < 4 ||
+                isLoading ||
+                (lockUntil && Date.now() < lockUntil)) &&
+                styles.unlockButtonDisabled,
+            ]}>
+            <Text style={styles.unlockButtonText}>
+              {isLoading ? t('common.loading') : t('lock_screen.unlock')}
+            </Text>
+          </TouchableOpacity>
 
-          <Button
-            mode="text"
+          <TouchableOpacity
             onPress={handleForgotPin}
-            style={styles.forgotButton}
-            labelStyle={styles.forgotButtonLabel}
-            // FIX: Ensure button is touchable
-            pointerEvents="auto">
-            {t('lock_screen.forgot_pin')}
-          </Button>
+            style={styles.forgotButton}>
+            <Text style={styles.forgotButtonText}>
+              {t('lock_screen.forgot_pin')}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         <BannerAd
@@ -397,8 +399,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   adContainer: {
     alignItems: 'center',
@@ -410,7 +410,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    width: '100%',
     paddingHorizontal: 30,
   },
   appIconContainer: {
@@ -470,6 +469,7 @@ const styles = StyleSheet.create({
   pinInput: {
     backgroundColor: '#F5F5F5',
     borderRadius: 12,
+    height: 50,
   },
   error: {
     color: '#FF3B30',
@@ -478,27 +478,34 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   unlockButton: {
-    marginBottom: 15,
-    borderRadius: 12,
     backgroundColor: '#1E88E5',
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 12,
     width: '100%',
+    alignItems: 'center',
+    marginBottom: 15,
     elevation: 4,
   },
-  unlockButtonLabel: {
+  unlockButtonDisabled: {
+    backgroundColor: '#BBDEFB',
+  },
+  unlockButtonText: {
+    color: '#FFF',
     fontSize: 16,
     fontWeight: 'bold',
-    paddingVertical: 6,
-    color: '#FFF',
   },
   forgotButton: {
-    marginBottom: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
   },
-  forgotButtonLabel: {
-    fontSize: 14,
+  forgotButtonText: {
     color: '#1E88E5',
+    fontSize: 14,
   },
   footer: {
     padding: 20,
+    alignItems: 'center',
   },
   footerText: {
     color: '#888',

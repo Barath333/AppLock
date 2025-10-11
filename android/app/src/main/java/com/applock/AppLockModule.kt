@@ -15,8 +15,15 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
     private val reactContext: ReactApplicationContext = reactContext
     private val handler = Handler(Looper.getMainLooper())
     private val OUR_APP_PACKAGE = "com.applock"
+    private lateinit var prefs: SharedPreferences // Add this line
 
     override fun getName(): String = "AppLockModule"
+
+    override fun initialize() {
+        super.initialize()
+        // Initialize prefs in initialize method
+        prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+    }
 
     @ReactMethod
     fun addListener(eventName: String) {
@@ -185,7 +192,7 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
             AppAccessibilityService.temporarilyUnlockedApps.add(packageName)
             
             // Also store in SharedPreferences for persistence
-            val prefs = reactContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
             val editor = prefs.edit()
             
             val currentTempUnlocked = prefs.getStringSet("tempUnlockedApps", mutableSetOf()) ?: mutableSetOf()
@@ -197,12 +204,13 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
             Log.d("AppLockModule", "✅ Temporarily unlocked app: $packageName")
             Log.d("AppLockModule", "📋 Current temp unlocked apps: $tempUnlockedApps")
             
-            // Remove after 30 seconds (increased for safety)
+            // CRITICAL FIX: Remove temporary unlock IMMEDIATELY after app is launched
+            // This ensures next time the app is opened, it will be locked again
             handler.postDelayed({
                 try {
                     AppAccessibilityService.temporarilyUnlockedApps.remove(packageName)
                     
-                    val updatedPrefs = reactContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+                    val updatedPrefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
                     val updatedEditor = updatedPrefs.edit()
                     val currentSet = updatedPrefs.getStringSet("tempUnlockedApps", mutableSetOf()) ?: mutableSetOf()
                     val updatedTempUnlockedApps = HashSet<String>(currentSet)
@@ -211,12 +219,12 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
                     updatedEditor.putStringSet("tempUnlockedApps", updatedTempUnlockedApps)
                     updatedEditor.apply()
                     
-                    Log.d("AppLockModule", "⏰ Temporary unlock expired for: $packageName")
+                    Log.d("AppLockModule", "⏰ Temporary unlock REMOVED for: $packageName")
                     Log.d("AppLockModule", "📋 Remaining temp unlocked apps: $updatedTempUnlockedApps")
                 } catch (e: Exception) {
                     Log.e("AppLockModule", "❌ Error removing temp unlock: ${e.message}")
                 }
-            }, 30000) // 30 seconds
+            }, 1000) // REDUCED to 1 second - just enough time to launch the app
         } catch (e: Exception) {
             Log.e("AppLockModule", "❌ Error temporarily unlocking app: ${e.message}")
         }
@@ -427,6 +435,50 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
             promise.resolve(result)
         } catch (e: Exception) {
             promise.reject("UNLOCKED_APPS_ERROR", "Failed to get unlocked apps: ${e.message}")
+        }
+    }
+
+    // NEW METHODS FOR BETTER DETECTION
+
+    @ReactMethod
+    fun forceDetectApp(packageName: String) {
+        try {
+            Log.d("AppLockModule", "🔍 Force detecting app: $packageName")
+            
+            // Get SharedPreferences
+            val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            val lockedApps = prefs.getStringSet("lockedApps", setOf<String>()) ?: setOf<String>()
+            
+            if (lockedApps.contains(packageName)) {
+                Log.d("AppLockModule", "🚨 Force detected LOCKED app: $packageName")
+                
+                // Send immediate lock event
+                sendAppLockedEvent(packageName, null)
+            } else {
+                Log.d("AppLockModule", "✅ Force detected UNLOCKED app: $packageName")
+            }
+        } catch (e: Exception) {
+            Log.e("AppLockModule", "❌ Error force detecting app: ${e.message}")
+        }
+    }
+
+    @ReactMethod
+    fun clearTemporaryUnlocks() {
+        try {
+            Log.d("AppLockModule", "🧹 Clearing all temporary unlocks")
+            
+            // Clear in-memory unlocks
+            AppAccessibilityService.temporarilyUnlockedApps.clear()
+            
+            // Clear SharedPreferences unlocks
+            val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            val editor = prefs.edit()
+            editor.remove("tempUnlockedApps")
+            editor.apply()
+            
+            Log.d("AppLockModule", "✅ All temporary unlocks cleared")
+        } catch (e: Exception) {
+            Log.e("AppLockModule", "❌ Error clearing temporary unlocks: ${e.message}")
         }
     }
 

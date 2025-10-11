@@ -1,5 +1,12 @@
 import React, {useState, useEffect, useRef} from 'react';
-import {StyleSheet, StatusBar, Alert, BackHandler, View} from 'react-native';
+import {
+  StyleSheet,
+  StatusBar,
+  Alert,
+  BackHandler,
+  View,
+  AppState,
+} from 'react-native';
 import {
   Provider as PaperProvider,
   DefaultTheme,
@@ -44,6 +51,7 @@ export default function App() {
   const [pendingLockedApp, setPendingLockedApp] = useState(null);
   const [securityWarning, setSecurityWarning] = useState(null);
   const [isSetupCompleted, setIsSetupCompleted] = useState(null);
+  const [appState, setAppState] = useState('active');
 
   const navigationRef = useRef();
 
@@ -52,7 +60,27 @@ export default function App() {
     checkSetupStatus();
     checkSecurity();
     checkLockScreenMode();
+
+    // Listen for app state changes
+    const subscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
+
+    return () => {
+      subscription.remove();
+    };
   }, []);
+
+  const handleAppStateChange = nextAppState => {
+    console.log('📱 App state changed:', appState, '->', nextAppState);
+    setAppState(nextAppState);
+
+    if (nextAppState === 'active') {
+      // Check if we need to show lock screen when app becomes active
+      checkLockScreenMode();
+    }
+  };
 
   const checkSetupStatus = async () => {
     try {
@@ -82,6 +110,7 @@ export default function App() {
       }
       console.log('✅ App reset successfully');
       setIsSetupCompleted(false);
+      setIsLockScreenMode(false); // Reset lock screen mode
       if (navigationRef.current) {
         navigationRef.current.reset({
           index: 0,
@@ -150,6 +179,8 @@ export default function App() {
         typeof AppLockModule.getPendingLockedApp === 'function'
       ) {
         const pendingApp = await AppLockModule.getPendingLockedApp();
+        console.log('📦 Pending locked app:', pendingApp);
+
         if (pendingApp && pendingApp.packageName) {
           console.log(
             '🚨 App started in lock screen mode for:',
@@ -191,7 +222,30 @@ export default function App() {
     );
   }
 
-  // Main app render
+  // If in lock screen mode, only show LockScreenManager
+  if (isLockScreenMode && pendingLockedApp) {
+    console.log('🔒 Rendering in LOCK SCREEN ONLY mode');
+    return (
+      <GestureHandlerRootView style={styles.container}>
+        <LanguageProvider>
+          <AlertProvider>
+            <PaperProvider theme={theme}>
+              <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+              <LockScreenManager
+                initialLockedApp={pendingLockedApp}
+                forceLockScreen={true}
+                onForgotPin={handleForgotPin}
+                onResetToSetup={handleResetToSetup}
+                isAppLockMode={true}
+              />
+            </PaperProvider>
+          </AlertProvider>
+        </LanguageProvider>
+      </GestureHandlerRootView>
+    );
+  }
+
+  // Main app render for normal mode
   return (
     <GestureHandlerRootView style={styles.container}>
       <LanguageProvider>
@@ -206,12 +260,12 @@ export default function App() {
               </View>
             )}
             <NavigationContainer ref={navigationRef}>
-              {/* CRITICAL: LockScreenManager must be INSIDE NavigationContainer */}
               <LockScreenManager
-                initialLockedApp={isLockScreenMode ? pendingLockedApp : null}
-                forceLockScreen={isLockScreenMode}
+                initialLockedApp={null}
+                forceLockScreen={false}
                 onForgotPin={handleForgotPin}
-                onResetToSetup={handleResetToSetup}>
+                onResetToSetup={handleResetToSetup}
+                isAppLockMode={false}>
                 {isSplashVisible ? (
                   <SimpleSplashScreen
                     onAnimationComplete={handleSplashComplete}

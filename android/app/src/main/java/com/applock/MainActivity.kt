@@ -7,22 +7,23 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
+import android.view.WindowManager
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint
+import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.modules.core.DeviceEventManagerModule
 
 class MainActivity : ReactActivity() {
     private var isLockScreenMode = false
-    private var shouldShowLockScreen = false
     private var lockedPackageName: String? = null
     private var lockedClassName: String? = null
-    private var isReactNativeReady = false
-    private var hasSentLockEvent = false
     private lateinit var prefs: SharedPreferences
     private val handler = Handler(Looper.getMainLooper())
+    private var hasHandledCurrentIntent = false
+    private var isReactNativeReady = false
 
     companion object {
         private const val TAG = "AppLockDebug"
@@ -31,43 +32,49 @@ class MainActivity : ReactActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d(TAG, "🏠 MainActivity onCreate")
+        Log.d(TAG, "🏠 MainActivity onCreate - Starting fresh instance")
         
         prefs = getSharedPreferences("AppLock", Context.MODE_PRIVATE)
         
-        // Handle intent immediately
-        handleLockedIntent(intent)
+        // CRITICAL: Always handle the intent in onCreate
+        handleIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        Log.d(TAG, "🔄 MainActivity onNewIntent")
-        setIntent(intent)
-        handleLockedIntent(intent)
+        Log.d(TAG, "🔄 MainActivity onNewIntent - New intent received")
+        setIntent(intent) // Update current intent
+        hasHandledCurrentIntent = false
+        handleIntent(intent)
     }
 
     override fun onResume() {
         super.onResume()
-        Log.d(TAG, "🔄 MainActivity onResume")
+        Log.d(TAG, "🔄 MainActivity onResume - isLockScreenMode: $isLockScreenMode")
         
-        // Check if we need to send lock event
-        checkAndSendLockEvent()
+        // Check if React Native is ready
+        if (!isReactNativeReady && reactInstanceManager?.currentReactContext != null) {
+            isReactNativeReady = true
+            Log.d(TAG, "✅ React Native is now ready")
+            
+            // If we're in lock screen mode but haven't sent the event, send it now
+            if (isLockScreenMode && lockedPackageName != null) {
+                sendLockEventToReactNative(lockedPackageName!!, lockedClassName)
+            }
+        }
         
-        // If we're in lock screen mode but haven't shown it yet, set it up
-        if (isLockScreenMode && shouldShowLockScreen) {
-            setupAsLockScreen()
+        // If we haven't handled the current intent yet, process it
+        if (!hasHandledCurrentIntent) {
+            handleIntent(intent)
         }
     }
 
-    override fun onPause() {
-        super.onPause()
-        Log.d(TAG, "⏸️ MainActivity onPause")
-    }
+    private fun handleIntent(intent: Intent?) {
+        if (intent == null || hasHandledCurrentIntent) {
+            return
+        }
 
-    private fun handleLockedIntent(intent: Intent?) {
-        if (intent == null) return
-        
-        Log.d(TAG, "📨 Handling Intent:")
+        Log.d(TAG, "📨 Processing Intent in handleIntent:")
         Log.d(TAG, "   Action: ${intent.action}")
         Log.d(TAG, "   Extras: ${intent.extras?.keySet()}")
         
@@ -75,25 +82,73 @@ class MainActivity : ReactActivity() {
         val lockedPackage = intent.getStringExtra("lockedPackage")
         
         if (isLockScreen && lockedPackage != null) {
-            Log.d(TAG, "🎯 Lock Screen Mode Activated for: $lockedPackage")
-            isLockScreenMode = true
-            shouldShowLockScreen = true
-            lockedPackageName = lockedPackage
-            lockedClassName = intent.getStringExtra("lockedClass")
-            
-            // Store in SharedPreferences for React Native to access
-            storePendingLockedApp(lockedPackage, lockedClassName)
-            
-            setupAsLockScreen()
-            hasSentLockEvent = false
-            
-            Log.d(TAG, "⏳ Stored locked app info for React Native: $lockedPackage")
+            Log.d(TAG, "🎯 LOCK SCREEN MODE ACTIVATED for: $lockedPackage")
+            activateLockScreenMode(lockedPackage, intent.getStringExtra("lockedClass"))
+            hasHandledCurrentIntent = true
         } else {
-            Log.d(TAG, "📭 Regular App Mode")
-            // Clear any pending lock screen state if not in lock screen mode
-            if (!isLockScreenMode) {
-                clearLockScreenState()
+            Log.d(TAG, "📭 REGULAR APP MODE - No lock screen intent")
+            // If no lock screen intent, make sure we're in regular mode
+            if (isLockScreenMode) {
+                Log.d(TAG, "⚠️ Was in lock screen mode but no lock intent - resetting")
+                resetToRegularMode()
             }
+            hasHandledCurrentIntent = true
+        }
+    }
+
+    private fun activateLockScreenMode(packageName: String, className: String?) {
+        Log.d(TAG, "🛡️ ACTIVATING LOCK SCREEN MODE for: $packageName")
+        
+        isLockScreenMode = true
+        lockedPackageName = packageName
+        lockedClassName = className
+        
+        // Store in SharedPreferences as backup
+        storePendingLockedApp(packageName, className)
+        
+        // Set up lock screen UI immediately
+        setupLockScreenUI()
+        
+        // Send event to React Native
+        sendLockEventToReactNative(packageName, className)
+    }
+
+    private fun resetToRegularMode() {
+        Log.d(TAG, "🔄 RESETTING TO REGULAR MODE")
+        isLockScreenMode = false
+        lockedPackageName = null
+        lockedClassName = null
+        hasHandledCurrentIntent = false
+        
+        // Clear any lock screen state
+        clearLockScreenState()
+        
+        // Remove lock screen flags
+        window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    private fun setupLockScreenUI() {
+        try {
+            Log.d(TAG, "🎨 Setting up Lock Screen UI")
+            
+            // Make this a proper lock screen that shows over other apps
+            window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
+            window.addFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD)
+            window.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+            window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+            
+            // Modern Android APIs
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+            
+            Log.d(TAG, "✅ Lock screen UI setup complete")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error setting up lock screen UI: ${e.message}", e)
         }
     }
 
@@ -117,92 +172,59 @@ class MainActivity : ReactActivity() {
             editor.remove("pendingLockedClass")
             editor.remove("pendingLockedTimestamp")
             editor.apply()
-            Log.d(TAG, "🧹 Cleared lock screen state")
+            Log.d(TAG, "🧹 Cleared lock screen state from SharedPreferences")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error clearing lock screen state: ${e.message}")
         }
     }
 
-    private fun checkAndSendLockEvent() {
-        if (shouldShowLockScreen && lockedPackageName != null && !hasSentLockEvent) {
-            Log.d(TAG, "🔍 Checking React Native readiness for lock event...")
-            
-            if (reactInstanceManager?.currentReactContext != null) {
-                Log.d(TAG, "✅ React Native is ready, sending lock event")
-                sendAppLockedEvent(lockedPackageName!!, lockedClassName)
-            } else {
-                Log.d(TAG, "⏳ React Native not ready yet, will retry")
-                // Retry after delay
-                handler.postDelayed({
-                    checkAndSendLockEvent()
-                }, 500)
-            }
+    private fun sendLockEventToReactNative(packageName: String, className: String?) {
+        Log.d(TAG, "📤 Attempting to send lock event to React Native: $packageName")
+        
+        val params = Bundle().apply {
+            putString("packageName", packageName)
+            putString("className", className)
+            putString("timestamp", System.currentTimeMillis().toString())
         }
-    }
-
-    private fun setupAsLockScreen() {
-        try {
-            Log.d(TAG, "🛡️ Setting up as Lock Screen")
-            
-            // For modern Android (SDK 30+), use these flags to show over lock screen
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-            
-            Log.d(TAG, "✅ Lock screen setup complete")
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error setting up lock screen: ${e.message}", e)
-        }
-    }
-
-    private fun sendAppLockedEvent(packageName: String, className: String?) {
-        try {
-            Log.d(TAG, "📤 Sending App Locked Event to React Native: $packageName")
-            
-            val params = Bundle().apply {
-                putString("packageName", packageName)
-                putString("className", className)
-                putString("timestamp", System.currentTimeMillis().toString())
-            }
-            
-            // Use handler to ensure this runs on UI thread
-            handler.post {
-                try {
-                    if (reactInstanceManager != null && 
-                        reactInstanceManager.currentReactContext != null) {
+        
+        handler.post {
+            try {
+                if (reactInstanceManager != null && 
+                    reactInstanceManager.currentReactContext != null) {
+                    
+                    Log.d(TAG, "✅ React Context is available, sending event")
+                    reactInstanceManager
+                        .currentReactContext
+                        ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                        ?.emit("onAppLocked", Arguments.fromBundle(params))
                         
-                        reactInstanceManager
-                            .currentReactContext
-                            ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-                            ?.emit("onAppLocked", Arguments.fromBundle(params))
-                            
-                        Log.d(TAG, "✅ App Locked Event Sent Successfully")
-                        hasSentLockEvent = true
-                        shouldShowLockScreen = false
-                    } else {
-                        Log.e(TAG, "❌ React Context is null, cannot send event")
-                        // Retry after a delay
-                        handler.postDelayed({
-                            sendAppLockedEvent(packageName, className)
-                        }, 500)
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Error sending locked event: ${e.message}", e)
+                    Log.d(TAG, "✅ Lock event sent successfully to React Native")
+                } else {
+                    Log.w(TAG, "⚠️ React Context not ready, will retry in 100ms")
+                    // Retry after short delay
+                    handler.postDelayed({
+                        sendLockEventToReactNative(packageName, className)
+                    }, 100)
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error sending lock event: ${e.message}", e)
             }
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error in sendAppLockedEvent: ${e.message}", e)
         }
     }
 
     override fun onBackPressed() {
-        // Check if we're in lock screen mode
         if (isLockScreenMode) {
-            Log.d(TAG, "🔒 Back button pressed in lock screen - Ignoring")
-            // Don't call super to prevent back button from working
+            Log.d(TAG, "🔒 Back button blocked - Lock screen is active")
+            // Don't call super - prevent back button from working
             return
         }
         super.onBackPressed()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d(TAG, "💀 MainActivity onDestroy")
+        // Don't reset state here as it might cause issues with rapid recreations
     }
 
     override fun getMainComponentName(): String = "AppLock"
