@@ -110,7 +110,7 @@ export default function App() {
       }
       console.log('✅ App reset successfully');
       setIsSetupCompleted(false);
-      setIsLockScreenMode(false); // Reset lock screen mode
+      setIsLockScreenMode(false);
       if (navigationRef.current) {
         navigationRef.current.reset({
           index: 0,
@@ -212,6 +212,13 @@ export default function App() {
     setIsSplashVisible(false);
   };
 
+  // CRITICAL FIX: Handle unlock of our own app
+  const handleAppUnlock = () => {
+    console.log('✅ App unlocked - switching to normal mode');
+    setIsLockScreenMode(false);
+    setPendingLockedApp(null);
+  };
+
   // Show loading state while checking setup status
   if (isSetupCompleted === null) {
     return (
@@ -237,6 +244,7 @@ export default function App() {
                 onForgotPin={handleForgotPin}
                 onResetToSetup={handleResetToSetup}
                 isAppLockMode={true}
+                onUnlock={handleAppUnlock} // Add this callback
               />
             </PaperProvider>
           </AlertProvider>

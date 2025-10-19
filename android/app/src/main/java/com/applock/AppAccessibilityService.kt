@@ -16,7 +16,11 @@ class AppAccessibilityService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private var isLockScreenActive = false
     private var lastLockTime: Long = 0
-    private val LOCK_COOLDOWN = 500L // Reduced cooldown for better detection
+    private val LOCK_COOLDOWN = 1000L
+    
+    // Track if we're currently processing our own app
+    private var isProcessingOwnApp = false
+    private var ownAppLockScreenShown = false
 
     companion object {
         val temporarilyUnlockedApps = mutableSetOf<String>()
@@ -40,7 +44,6 @@ class AppAccessibilityService : AccessibilityService() {
                     handleWindowStateChanged(it)
                 }
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                    // Also handle content changes for better detection
                     handleWindowContentChanged(it)
                 }
                 else -> {
@@ -50,27 +53,101 @@ class AppAccessibilityService : AccessibilityService() {
         }
     }
 
- private fun handleWindowStateChanged(event: AccessibilityEvent) {
-    val packageName = event.packageName?.toString()
-    val className = event.className?.toString()
-    
-    Log.d("AppLockDebug", "🏠 Window State Changed - Package: $packageName, Class: $className")
-    
-    if (packageName != null && packageName != lastPackageName) {
-        lastPackageName = packageName
+    private fun handleWindowStateChanged(event: AccessibilityEvent) {
+        val packageName = event.packageName?.toString()
+        val className = event.className?.toString()
         
+        Log.d("AppLockDebug", "🏠 Window State Changed - Package: $packageName, Class: $className")
+        
+        if (packageName != null && packageName != lastPackageName) {
+            lastPackageName = packageName
+            
+            // CRITICAL FIX: Reset own app state when switching to other apps
+            if (packageName != OUR_APP_PACKAGE) {
+                isProcessingOwnApp = false
+                ownAppLockScreenShown = false
+                Log.d("AppLockDebug", "🔄 Reset own app state - switched to: $packageName")
+            }
+            
+            // CRITICAL FIX: Skip if we're already processing our own app's lock screen
+            if (isProcessingOwnApp && packageName == OUR_APP_PACKAGE) {
+                Log.d("AppLockDebug", "⏭️ Skipping - already processing our own app lock screen")
+                return
+            }
+            
+            // Skip if lock screen is already active to prevent loops
+            if (isLockScreenActive) {
+                Log.d("AppLockDebug", "⏭️ Lock screen already active, skipping")
+                return
+            }
+            
+            // Skip system/launcher apps
+            if (isSystemApp(packageName)) {
+                Log.d("AppLockDebug", "⏭️ Skipping system app: $packageName")
+                return
+            }
+            
+            // Check if this app is temporarily unlocked
+            if (isAppTemporarilyUnlocked(packageName)) {
+                Log.d("AppLockDebug", "🔓 App is temporarily unlocked: $packageName")
+                return
+            }
+            
+            // Check if this app is locked
+            val lockedApps = prefs.getStringSet("lockedApps", setOf()) ?: setOf()
+            
+            if (lockedApps.contains(packageName)) {
+                Log.d("AppLockDebug", "🚨 LOCKED APP DETECTED: $packageName")
+                
+                // SPECIAL HANDLING FOR OUR OWN APP
+                if (packageName == OUR_APP_PACKAGE) {
+                    if (ownAppLockScreenShown) {
+                        Log.d("AppLockDebug", "⏭️ Our own app lock screen already shown, skipping")
+                        return
+                    }
+                    isProcessingOwnApp = true
+                    ownAppLockScreenShown = true
+                    Log.d("AppLockDebug", "🔒 Handling our own app lock")
+                }
+                
+                isLockScreenActive = true
+                lastLockTime = System.currentTimeMillis()
+                showLockScreen(packageName, className)
+            } else {
+                Log.d("AppLockDebug", "✅ App $packageName is not locked")
+            }
+        }
+    }
+
+    private fun handleWindowContentChanged(event: AccessibilityEvent) {
+        val packageName = event.packageName?.toString()
+        
+        // For some apps, we might only get CONTENT_CHANGED events
+        if (packageName != null && packageName != lastPackageName) {
+            lastPackageName = packageName
+            
+            // CRITICAL FIX: Skip if we're already processing our own app
+            if (isProcessingOwnApp && packageName == OUR_APP_PACKAGE) {
+                Log.d("AppLockDebug", "⏭️ Skipping content changed - processing our own app")
+                return
+            }
+            
+            checkAndShowLockScreen(packageName, null)
+        }
+    }
+
+    private fun checkAndShowLockScreen(packageName: String, className: String?) {
         // Skip if lock screen is already active to prevent loops
         if (isLockScreenActive) {
             Log.d("AppLockDebug", "⏭️ Lock screen already active, skipping")
             return
         }
         
-        // CRITICAL FIX: Remove cooldown period for better detection
-        // val currentTime = System.currentTimeMillis()
-        // if (currentTime - lastLockTime < LOCK_COOLDOWN) {
-        //     Log.d("AppLockDebug", "⏳ In cooldown period, skipping")
-        //     return
-        // }
+        // CRITICAL FIX: Skip if we're already processing our own app
+        if (isProcessingOwnApp && packageName == OUR_APP_PACKAGE) {
+            Log.d("AppLockDebug", "⏭️ Skipping check - processing our own app")
+            return
+        }
         
         // Skip system/launcher apps
         if (isSystemApp(packageName)) {
@@ -84,11 +161,23 @@ class AppAccessibilityService : AccessibilityService() {
             return
         }
         
-        // Check if this app is locked - INCLUDING OUR OWN APP
+        // Check if this app is locked
         val lockedApps = prefs.getStringSet("lockedApps", setOf()) ?: setOf()
         
         if (lockedApps.contains(packageName)) {
             Log.d("AppLockDebug", "🚨 LOCKED APP DETECTED: $packageName")
+            
+            // SPECIAL HANDLING FOR OUR OWN APP
+            if (packageName == OUR_APP_PACKAGE) {
+                if (ownAppLockScreenShown) {
+                    Log.d("AppLockDebug", "⏭️ Our own app lock screen already shown, skipping")
+                    return
+                }
+                isProcessingOwnApp = true
+                ownAppLockScreenShown = true
+                Log.d("AppLockDebug", "🔒 Handling our own app lock")
+            }
+            
             isLockScreenActive = true
             lastLockTime = System.currentTimeMillis()
             showLockScreen(packageName, className)
@@ -96,89 +185,7 @@ class AppAccessibilityService : AccessibilityService() {
             Log.d("AppLockDebug", "✅ App $packageName is not locked")
         }
     }
-}
 
-// Add this new method to handle app foreground events
-private fun handleAppInForeground(packageName: String, className: String?) {
-    Log.d("AppLockDebug", "🔍 App in foreground: $packageName")
-    
-    // Skip if we just processed this package
-    if (packageName == lastPackageName) {
-        return
-    }
-    
-    lastPackageName = packageName
-    
-    // Skip system/launcher apps
-    if (isSystemApp(packageName)) {
-        return
-    }
-    
-    // Check if this app is temporarily unlocked
-    if (isAppTemporarilyUnlocked(packageName)) {
-        Log.d("AppLockDebug", "🔓 App is temporarily unlocked: $packageName")
-        return
-    }
-    
-    // Check if this app is locked
-    val lockedApps = prefs.getStringSet("lockedApps", setOf()) ?: setOf()
-    
-    if (lockedApps.contains(packageName)) {
-        Log.d("AppLockDebug", "🚨 LOCKED APP IN FOREGROUND: $packageName")
-        isLockScreenActive = true
-        lastLockTime = System.currentTimeMillis()
-        showLockScreen(packageName, className)
-    }
-}
-
-    private fun handleWindowContentChanged(event: AccessibilityEvent) {
-        val packageName = event.packageName?.toString()
-        
-        // For some apps, we might only get CONTENT_CHANGED events
-        if (packageName != null && packageName != lastPackageName) {
-            lastPackageName = packageName
-            checkAndShowLockScreen(packageName, null)
-        }
-    }
-
-   private fun checkAndShowLockScreen(packageName: String, className: String?) {
-    // Skip if lock screen is already active to prevent loops
-    if (isLockScreenActive) {
-        Log.d("AppLockDebug", "⏭️ Lock screen already active, skipping")
-        return
-    }
-    
-    // CRITICAL FIX: Remove cooldown period for better detection
-    // val currentTime = System.currentTimeMillis()
-    // if (currentTime - lastLockTime < LOCK_COOLDOWN) {
-    //     Log.d("AppLockDebug", "⏳ In cooldown period, skipping")
-    //     return
-    // }
-    
-    // Skip system/launcher apps
-    if (isSystemApp(packageName)) {
-        Log.d("AppLockDebug", "⏭️ Skipping system app: $packageName")
-        return
-    }
-    
-    // Check if this app is temporarily unlocked
-    if (isAppTemporarilyUnlocked(packageName)) {
-        Log.d("AppLockDebug", "🔓 App is temporarily unlocked: $packageName")
-        return
-    }
-    
-    // Check if this app is locked - INCLUDING OUR OWN APP
-    val lockedApps = prefs.getStringSet("lockedApps", setOf()) ?: setOf()
-    
-    if (lockedApps.contains(packageName)) {
-        Log.d("AppLockDebug", "🚨 LOCKED APP DETECTED: $packageName")
-        isLockScreenActive = true
-        lastLockTime = System.currentTimeMillis()
-        showLockScreen(packageName, className)
-    } else {
-        Log.d("AppLockDebug", "✅ App $packageName is not locked")
-    }
-}
     private fun isAppTemporarilyUnlocked(packageName: String): Boolean {
         // Check in-memory temporary unlocks
         if (temporarilyUnlockedApps.contains(packageName)) {
@@ -209,48 +216,46 @@ private fun handleAppInForeground(packageName: String, className: String?) {
                packageName.startsWith("com.google.android.") ||
                packageName == "com.android.settings" ||
                packageName == "com.android.systemui")
-        // REMOVED: && packageName != OUR_APP_PACKAGE - We want to handle our own app
     }
 
-private fun showLockScreen(packageName: String, className: String?) {
-    Log.d("AppLockDebug", "🚀 STARTING LOCK SCREEN for: $packageName")
-    
-    // CRITICAL: Always create a completely fresh instance
-    val intent = Intent(applicationContext, MainActivity::class.java).apply {
-        putExtra("lockedPackage", packageName)
-        putExtra("lockedClass", className)
-        putExtra("isLockScreen", true)
-        putExtra("timestamp", System.currentTimeMillis())
-        // CRITICAL FLAGS: Ensure fresh instance every time
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)  // Clear entire task stack
-        addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
-        addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
-        addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-        addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-    }
-    
-    try {
-        startActivity(intent)
-        Log.d("AppLockDebug", "✅ Lock Screen Activity STARTED for: $packageName")
+    private fun showLockScreen(packageName: String, className: String?) {
+        Log.d("AppLockDebug", "🚀 STARTING LOCK SCREEN for: $packageName")
         
-        // Reset the active flag quickly
-        handler.postDelayed({
+        // CRITICAL: Always create a completely fresh instance
+        val intent = Intent(applicationContext, MainActivity::class.java).apply {
+            putExtra("lockedPackage", packageName)
+            putExtra("lockedClass", className)
+            putExtra("isLockScreen", true)
+            putExtra("timestamp", System.currentTimeMillis())
+            // CRITICAL FLAGS: Ensure fresh instance every time
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
+            addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+        }
+        
+        try {
+            startActivity(intent)
+            Log.d("AppLockDebug", "✅ Lock Screen Activity STARTED for: $packageName")
+            
+            // Reset the active flag quickly
+            handler.postDelayed({
+                isLockScreenActive = false
+                Log.d("AppLockDebug", "🔄 Reset lock screen active flag")
+            }, 500)
+        } catch (e: Exception) {
+            Log.e("AppLockDebug", "❌ FAILED to start lock screen: ${e.message}", e)
             isLockScreenActive = false
-            Log.d("AppLockDebug", "🔄 Reset lock screen active flag")
-        }, 500)
-    } catch (e: Exception) {
-        Log.e("AppLockDebug", "❌ FAILED to start lock screen: ${e.message}", e)
-        isLockScreenActive = false
-        
-        // Try again after short delay
-        handler.postDelayed({
-            showLockScreen(packageName, className)
-        }, 100)
+            isProcessingOwnApp = false
+            
+            // Try again after short delay
+            handler.postDelayed({
+                showLockScreen(packageName, className)
+            }, 100)
+        }
     }
-}
 
     override fun onInterrupt() {
         Log.d("AppLockDebug", "⚠️ Accessibility Service Interrupted")

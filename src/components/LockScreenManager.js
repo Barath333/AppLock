@@ -31,7 +31,8 @@ const LockScreenManager = ({
   forceLockScreen = false,
   onForgotPin,
   onResetToSetup,
-  isAppLockMode = false, // New prop to indicate if we're in AppLock app mode
+  isAppLockMode = false,
+  onUnlock, // Add this new prop for handling unlock callback
 }) => {
   const {t} = useTranslation();
   const {showAlert} = useAlert();
@@ -169,6 +170,12 @@ const LockScreenManager = ({
   const handleLockedEvent = event => {
     console.log('🎯 Lock Event Received:', event.packageName);
 
+    // SPECIAL HANDLING FOR OUR OWN APP
+    if (event.packageName === OUR_APP_PACKAGE && showLockScreen) {
+      console.log('⏭️ Ignoring duplicate lock event for our own app');
+      return;
+    }
+
     // If we're in AppLock mode, ignore new lock events (we're already handling one)
     if (isAppLockMode && showLockScreen) {
       console.log(
@@ -194,7 +201,7 @@ const LockScreenManager = ({
   const processLockEvent = event => {
     if (isProcessingEvent.current) {
       console.log('⏳ Already processing event, queuing...');
-      eventQueue.current.unshift(event); // Put back at front of queue
+      eventQueue.current.unshift(event);
       return;
     }
 
@@ -290,15 +297,22 @@ const LockScreenManager = ({
           await AppLockModule.temporarilyUnlockApp(currentApp.packageName);
         }
 
+        // SPECIAL HANDLING FOR OUR OWN APP
         if (currentApp.packageName === OUR_APP_PACKAGE) {
-          console.log('🏠 Unlocking our own app');
+          console.log('🏠 Unlocking our own app - just closing lock screen');
+
+          // CRITICAL FIX: Call onUnlock callback if provided (for App.js state management)
+          if (onUnlock) {
+            console.log(
+              '🔄 Calling onUnlock callback to switch to normal mode',
+            );
+            onUnlock();
+          }
+
           closeLockScreen();
 
-          // If we're in AppLock mode, we need to navigate to home
-          if (isAppLockMode) {
-            // We'll let the App component handle the navigation
-            console.log('🔄 In AppLock mode, unlock complete');
-          }
+          // For our own app, we don't need to launch anything
+          // The app will continue normally from where it was
         } else {
           console.log('🚀 Launching original app:', currentApp.packageName);
           if (AppLockModule && typeof AppLockModule.launchApp === 'function') {

@@ -15,13 +15,12 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
     private val reactContext: ReactApplicationContext = reactContext
     private val handler = Handler(Looper.getMainLooper())
     private val OUR_APP_PACKAGE = "com.applock"
-    private lateinit var prefs: SharedPreferences // Add this line
+    private lateinit var prefs: SharedPreferences
 
     override fun getName(): String = "AppLockModule"
 
     override fun initialize() {
         super.initialize()
-        // Initialize prefs in initialize method
         prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
     }
 
@@ -66,7 +65,6 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
             val packageName = getPendingLockedAppFromPrefs()
             val className = getPendingLockedClassFromPrefs()
             
-            // CRITICAL FIX: Include our own app in pending locked apps
             if (packageName != null) {
                 Log.d("AppLockModule", "📦 Found pending locked app: $packageName")
                 val result = WritableNativeMap().apply {
@@ -94,7 +92,7 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
             val packageName = prefs.getString("pendingLockedPackage", null)
             val timestamp = prefs.getLong("pendingLockedTimestamp", 0)
             
-            // Only return if it's recent (within 30 seconds) - INCLUDING OUR OWN APP
+            // Only return if it's recent (within 30 seconds)
             if (packageName != null && System.currentTimeMillis() - timestamp < 30000) {
                 packageName
             } else {
@@ -139,10 +137,12 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
             
             handler.post {
                 try {
-                    // Don't launch our own app - just close the lock screen
+                    // SPECIAL HANDLING FOR OUR OWN APP
                     if (packageName == OUR_APP_PACKAGE) {
-                        Log.d("AppLockModule", "🏠 Not launching our own app, just closing lock screen")
-                        currentActivity?.finishAndRemoveTask()
+                        Log.d("AppLockModule", "🏠 Launching our own app after unlock")
+                        // CRITICAL FIX: Don't use finishAndRemoveTask - just finish the lock screen
+                        // This allows the underlying MainActivity to resume normally
+                        currentActivity?.finish()
                         return@post
                     }
                     
@@ -160,7 +160,7 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
                         // Close our lock screen activity after a short delay
                         handler.postDelayed({
                             try {
-                                currentActivity?.finishAndRemoveTask()
+                                currentActivity?.finish()
                                 Log.d("AppLockModule", "✅ Lock screen closed after app launch")
                             } catch (e: Exception) {
                                 Log.e("AppLockModule", "❌ Error closing lock screen: ${e.message}")
@@ -170,12 +170,12 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
                     } else {
                         Log.e("AppLockModule", "❌ No launch intent found for: $packageName")
                         // Fallback: just close our app
-                        currentActivity?.finishAndRemoveTask()
+                        currentActivity?.finish()
                     }
                 } catch (e: Exception) {
                     Log.e("AppLockModule", "❌ Error launching app: ${e.message}", e)
                     // Fallback: just close our app
-                    currentActivity?.finishAndRemoveTask()
+                    currentActivity?.finish()
                 }
             }
         } catch (e: Exception) {
@@ -202,10 +202,11 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
             editor.apply()
             
             Log.d("AppLockModule", "✅ Temporarily unlocked app: $packageName")
-            Log.d("AppLockModule", "📋 Current temp unlocked apps: $tempUnlockedApps")
             
-            // CRITICAL FIX: Remove temporary unlock IMMEDIATELY after app is launched
-            // This ensures next time the app is opened, it will be locked again
+            // CRITICAL FIX: For our own app, remove temporary unlock immediately after unlock
+            // For other apps, keep it for 1 second to allow app launch
+            val unlockDuration = if (packageName == OUR_APP_PACKAGE) 100L else 1000L
+            
             handler.postDelayed({
                 try {
                     AppAccessibilityService.temporarilyUnlockedApps.remove(packageName)
@@ -220,11 +221,10 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
                     updatedEditor.apply()
                     
                     Log.d("AppLockModule", "⏰ Temporary unlock REMOVED for: $packageName")
-                    Log.d("AppLockModule", "📋 Remaining temp unlocked apps: $updatedTempUnlockedApps")
                 } catch (e: Exception) {
                     Log.e("AppLockModule", "❌ Error removing temp unlock: ${e.message}")
                 }
-            }, 1000) // REDUCED to 1 second - just enough time to launch the app
+            }, unlockDuration)
         } catch (e: Exception) {
             Log.e("AppLockModule", "❌ Error temporarily unlocking app: ${e.message}")
         }
@@ -236,7 +236,7 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
             val activity = currentActivity
             activity?.runOnUiThread {
                 try {
-                    activity.finishAndRemoveTask()
+                    activity.finish()
                     Log.d("AppLockModule", "✅ Lock screen closed")
                 } catch (e: Exception) {
                     Log.e("AppLockModule", "❌ Error closing lock screen: ${e.message}")
@@ -438,21 +438,16 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
         }
     }
 
-    // NEW METHODS FOR BETTER DETECTION
-
     @ReactMethod
     fun forceDetectApp(packageName: String) {
         try {
             Log.d("AppLockModule", "🔍 Force detecting app: $packageName")
             
-            // Get SharedPreferences
             val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
             val lockedApps = prefs.getStringSet("lockedApps", setOf<String>()) ?: setOf<String>()
             
             if (lockedApps.contains(packageName)) {
                 Log.d("AppLockModule", "🚨 Force detected LOCKED app: $packageName")
-                
-                // Send immediate lock event
                 sendAppLockedEvent(packageName, null)
             } else {
                 Log.d("AppLockModule", "✅ Force detected UNLOCKED app: $packageName")
@@ -467,10 +462,8 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
         try {
             Log.d("AppLockModule", "🧹 Clearing all temporary unlocks")
             
-            // Clear in-memory unlocks
             AppAccessibilityService.temporarilyUnlockedApps.clear()
             
-            // Clear SharedPreferences unlocks
             val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
             val editor = prefs.edit()
             editor.remove("tempUnlockedApps")
@@ -482,7 +475,6 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
         }
     }
 
-    // Method to send events to React Native
     fun sendAppLockedEvent(packageName: String, className: String?) {
         try {
             Log.d("AppLockModule", "📤 Sending onAppLocked event to React Native: $packageName")
