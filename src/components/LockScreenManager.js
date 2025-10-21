@@ -387,21 +387,33 @@ const LockScreenManager = ({
       const securityAnswer = await AsyncStorage.getItem('security_answer');
 
       if (securityQuestion && securityAnswer) {
+        console.log('🔐 Security Q&A exists - navigating to ForgotPin');
         closeLockScreen();
         if (onForgotPin) onForgotPin();
       } else {
+        console.log('⚠️ No security Q&A - showing reset options');
         showAlert(
-          t('alerts.reset_pin'),
-          t('forgot_pin.reset_warning'),
+          t('alerts.reset_app'),
+          t('forgot_pin.no_recovery_option_warning'),
           'warning',
           [
             {text: t('common.cancel'), style: 'cancel'},
             {
-              text: t('alerts.reset'),
+              text: t('alerts.reset_app'),
               onPress: async () => {
                 try {
+                  console.log('🔄 User chose to reset app');
                   closeLockScreen();
-                  if (onForgotPin) onForgotPin();
+
+                  // Give time for lock screen to close before resetting
+                  setTimeout(() => {
+                    if (onResetToSetup) {
+                      onResetToSetup();
+                    } else if (onForgotPin) {
+                      // Fallback to onForgotPin if onResetToSetup not available
+                      onForgotPin();
+                    }
+                  }, 500);
                 } catch (error) {
                   console.error('Error in reset confirmation:', error);
                   showAlert(
@@ -418,6 +430,7 @@ const LockScreenManager = ({
       }
     } catch (error) {
       console.error('Error checking security question:', error);
+      showAlert(t('alerts.error'), t('errors.security_check_failed'), 'error');
     }
   };
 

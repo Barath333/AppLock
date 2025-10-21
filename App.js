@@ -132,10 +132,53 @@ export default function App() {
     }
   };
 
+  const handleForgotPin = () => {
+    console.log('🔄 Handling forgot PIN - checking security setup');
+
+    // Check if security question exists
+    AsyncStorage.getItem('security_question')
+      .then(securityQuestion => {
+        AsyncStorage.getItem('security_answer').then(securityAnswer => {
+          if (securityQuestion && securityAnswer) {
+            console.log('🔐 Security Q&A exists - navigating to ForgotPin');
+            if (navigationRef.current) {
+              navigationRef.current.navigate('ForgotPin');
+            }
+          } else {
+            console.log('⚠️ No security Q&A - showing reset warning');
+            Alert.alert(
+              t('alerts.reset_app'),
+              t('forgot_pin.no_security_reset_warning'),
+              [
+                {text: t('common.cancel'), style: 'cancel'},
+                {
+                  text: t('alerts.reset_app'),
+                  style: 'destructive',
+                  onPress: () => {
+                    console.log('🔄 User confirmed app reset from Forgot PIN');
+                    handleResetToSetup();
+                  },
+                },
+              ],
+            );
+          }
+        });
+      })
+      .catch(error => {
+        console.error('Error checking security setup:', error);
+        Alert.alert(t('alerts.error'), t('errors.security_check_failed'), [
+          {text: t('common.ok')},
+        ]);
+      });
+  };
+
   const handleResetToSetup = async () => {
     console.log('🔄 Resetting app to setup state...');
     try {
+      // Clear Keychain PIN
       await Keychain.resetGenericPassword({service: 'applock_service'});
+
+      // Clear all app data
       await AsyncStorage.multiRemove([
         'setupCompleted',
         'lockedApps',
@@ -143,33 +186,48 @@ export default function App() {
         'lock_until',
         'security_question',
         'security_answer',
+        'biometrics_enabled',
+        'autoLockNewApps',
       ]);
+
+      // Clear native module locked apps
       if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
         await AppLockModule.setLockedApps([]);
       }
+
+      // Clear temporary unlocks
+      if (
+        AppLockModule &&
+        typeof AppLockModule.clearTemporaryUnlocks === 'function'
+      ) {
+        await AppLockModule.clearTemporaryUnlocks();
+      }
+
       console.log('✅ App reset successfully');
+
+      // Reset all state
       setIsSetupCompleted(false);
       setIsLockScreenMode(false);
       setIsAppLocked(false);
+      setPendingLockedApp(null);
+
+      // Navigate to setup screen
       if (navigationRef.current) {
         navigationRef.current.reset({
           index: 0,
           routes: [{name: 'Setup'}],
         });
       }
+
+      // Show success message
+      Alert.alert(t('alerts.success'), t('settings.reset_success'), [
+        {text: t('common.ok')},
+      ]);
     } catch (error) {
       console.error('❌ Error resetting app:', error);
-      Alert.alert(
-        'Error',
-        'Failed to reset app. Please restart the application.',
-      );
-    }
-  };
-
-  const handleForgotPin = () => {
-    console.log('🔄 Handling forgot PIN');
-    if (navigationRef.current) {
-      navigationRef.current.navigate('ForgotPin');
+      Alert.alert(t('alerts.error'), t('errors.reset_failed'), [
+        {text: t('common.ok')},
+      ]);
     }
   };
 

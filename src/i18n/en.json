@@ -48,7 +48,7 @@
     "all_apps_locked": "All apps have been locked",
     "all_apps_unlocked": "All apps have been unlocked",
     "initial_setup_message": "Default security setup complete. Your AppLock is now protecting your apps.",
-      "security_recommendation": "Security Recommendation",
+    "security_recommendation": "Security Recommendation",
     "security_recommendation_desc": "Lock the App Lock application itself for maximum security. Otherwise, anyone can access and modify your lock settings.",
     "security_enabled_message": "App Lock is now protected. You will need to enter your PIN to access it.",
     "quick_actions": "Quick Actions",
@@ -209,41 +209,44 @@
   },
   "forgot_pin": {
     "title": "Forgot PIN",
-    "subtitle": "Answer your security question to reset your PIN",
-    "security_question": "Security Question:",
+    "answer_question": "Answer your security question to reset your PIN",
+    "security_question": "Your Security Question",
     "your_answer": "Your Answer",
-    "new_pin": "New PIN (4-6 digits)",
-    "confirm_new_pin": "Confirm New PIN",
+    "enter_answer": "Please enter your answer",
+    "incorrect_answer": "Incorrect answer. Please try again.",
+    "set_new_pin": "Set your new PIN",
     "reset_pin": "Reset PIN",
-    "reset_note": "Resetting your PIN will unlock all currently locked apps for security reasons.",
-    "no_question_set": "Security question not set up. Please set it up in Settings.",
-    "reset_warning": "This will reset your PIN and unlock all apps. You will need to set up a new PIN.",
-    "reset_success": "PIN has been reset. All apps are now unlocked."
+    "back_to_question": "Back to Question",
+    "reset_success": "PIN reset successfully!",
+    "enter_both_pins": "Please enter and confirm your new PIN",
+    "no_security_question": "No security question set up",
+    "no_security_question_warning": "You haven't set up a security question. The only way to reset your PIN is to reset the entire app, which will clear all your data and settings.",
+    "no_recovery_option_warning": "You haven't set up any recovery option. To reset your PIN, you need to reset the entire app. This will clear all your data, locked apps, and settings.",
+    "no_security_reset_warning": "You haven't set up a security question. To reset your PIN, you need to reset the entire app. This will clear all your data and start fresh."
   },
- "about": {
-  "title": "App Lock",
-  "version": "Version 1.0.0",
-  "description": "Secure your privacy by locking apps with a PIN code. App Lock provides comprehensive protection for your personal applications and data.",
-  "information": "Information",
-  "contact_support": "Contact Support",
-  "contact_support_desc": "Get help or report an issue via email.",
-  "privacy_policy": "Privacy Policy",
-  "privacy_policy_desc": "Learn how we protect and handle your personal information.",
-  "terms_service": "Terms of Service",
-  "terms_service_desc": "Read the terms and conditions for using App Lock.",
-  "features": "Features",
-  "app_locking": "App Locking",
-  "app_locking_desc": "Lock any app with PIN protection",
-  "biometric_auth": "Biometric Auth",
-  "biometric_auth_desc": "Unlock with fingerprint or face ID",
-  "security_question_feature": "Security Question",
-  "security_question_desc": "Recover PIN if forgotten",
-  "master_pin_change": "Master PIN Change",
-  "master_pin_change_desc": "Update your security PIN anytime",
-  "footer": "© 2025 App Lock. All rights reserved.",
-  "footer_subtext": "Protect your privacy, one app at a time."
-}
-,
+  "about": {
+    "title": "App Lock",
+    "version": "Version 1.0.0",
+    "description": "Secure your privacy by locking apps with a PIN code. App Lock provides comprehensive protection for your personal applications and data.",
+    "information": "Information",
+    "contact_support": "Contact Support",
+    "contact_support_desc": "Get help or report an issue via email.",
+    "privacy_policy": "Privacy Policy",
+    "privacy_policy_desc": "Learn how we protect and handle your personal information.",
+    "terms_service": "Terms of Service",
+    "terms_service_desc": "Read the terms and conditions for using App Lock.",
+    "features": "Features",
+    "app_locking": "App Locking",
+    "app_locking_desc": "Lock any app with PIN protection",
+    "biometric_auth": "Biometric Auth",
+    "biometric_auth_desc": "Unlock with fingerprint or face ID",
+    "security_question_feature": "Security Question",
+    "security_question_desc": "Recover PIN if forgotten",
+    "master_pin_change": "Master PIN Change",
+    "master_pin_change_desc": "Update your security PIN anytime",
+    "footer": "© 2025 App Lock. All rights reserved.",
+    "footer_subtext": "Protect your privacy, one app at a time."
+  },
   "language": {
     "title": "Select Language",
     "subtitle": "Choose your preferred language",
@@ -272,7 +275,9 @@
     "setting_update_failed": "Failed to update setting",
     "test_failed": "Test failed",
     "reset_failed_data": "Failed to reset data",
-    "operation_failed": "Operation failed. Please try again."
+    "operation_failed": "Operation failed. Please try again.",
+        "security_check_failed": "Failed to check security settings",
+    "verification_failed": "Failed to verify security answer"
   },
   "alerts": {
     "success": "Success",
@@ -287,7 +292,8 @@
     "unlock_all": "Unlock All",
     "welcome": "Welcome to AppLock!",
     "lock_all_apps": "Lock All Apps",
-    "unlock_all_apps": "Unlock All Apps"
+    "unlock_all_apps": "Unlock All Apps",
+       "reset_app": "Reset App"
   },
   "drawer": {
     "home": "Home",
@@ -296,4 +302,5 @@
     "security": "Security",
     "about": "About"
   }
+  
 }

@@ -195,24 +195,34 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
     try {
       const securityQuestion = await AsyncStorage.getItem('security_question');
       const securityAnswer = await AsyncStorage.getItem('security_answer');
+
       if (securityQuestion && securityAnswer) {
-        console.log('🔄 Calling onForgotPin prop - Security Q&A exists');
+        console.log('🔄 Security Q&A exists - navigating to ForgotPin screen');
         if (onForgotPin) onForgotPin();
         if (onClose) onClose();
       } else {
         console.log('🔄 No security Q&A - showing reset confirmation');
         showAlert(
           t('alerts.reset_pin'),
-          t('forgot_pin.reset_warning'),
+          t('forgot_pin.no_security_question_warning'),
           'warning',
           [
             {text: t('common.cancel'), style: 'cancel'},
             {
-              text: t('alerts.reset'),
+              text: t('alerts.reset_app'),
               onPress: async () => {
                 try {
-                  console.log('🔄 User confirmed reset - calling onForgotPin');
-                  if (onForgotPin) onForgotPin();
+                  console.log('🔄 User confirmed app reset');
+                  // Close lock screen first
+                  if (onClose) onClose();
+
+                  // Then trigger the app reset
+                  if (onForgotPin) {
+                    // Use a small delay to ensure lock screen is closed
+                    setTimeout(() => {
+                      onForgotPin();
+                    }, 300);
+                  }
                 } catch (error) {
                   console.error('Error in reset confirmation:', error);
                   showAlert(
@@ -229,6 +239,7 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
       }
     } catch (error) {
       console.error('Error checking security question:', error);
+      showAlert(t('alerts.error'), t('errors.security_check_failed'), 'error');
     }
   };
 
