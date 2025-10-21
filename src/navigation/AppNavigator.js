@@ -57,14 +57,14 @@ function CustomDrawerContent(props) {
           labelStyle={styles.drawerLabel}
           onPress={() => props.navigation.navigate('Settings')}
         />
-        <DrawerItem
+        {/* <DrawerItem
           icon={({color, size}) => (
             <Icon name="crown" color={color} size={size} />
           )}
           label={t('drawer.premium')}
           labelStyle={styles.drawerLabel}
           onPress={() => props.navigation.navigate('Premium')}
-        />
+        /> */}
         <DrawerItem
           icon={({color, size}) => (
             <Icon name="shield-key" color={color} size={size} />

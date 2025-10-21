@@ -617,7 +617,7 @@ const SettingsScreen = () => {
       </Card>
 
       {/* Permissions */}
-      <Card style={styles.card}>
+      {/* <Card style={styles.card}>
         <Card.Content>
           <Text style={styles.sectionTitle}>{t('settings.permissions')}</Text>
 
@@ -729,7 +729,7 @@ const SettingsScreen = () => {
             {t('settings.test_service')}
           </Button>
         </Card.Content>
-      </Card>
+      </Card> */}
 
       {/* Language & Regional */}
       <Card style={styles.card}>
@@ -757,7 +757,7 @@ const SettingsScreen = () => {
       </Card>
 
       {/* Premium Features */}
-      <Card style={styles.card}>
+      {/* <Card style={styles.card}>
         <Card.Content>
           <Text style={styles.sectionTitle}>{t('settings.premium')}</Text>
 
@@ -782,7 +782,7 @@ const SettingsScreen = () => {
             onPress={handleUpgradeToPremium}
           />
         </Card.Content>
-      </Card>
+      </Card> */}
 
       {/* Maintenance */}
       <Card style={styles.card}>
@@ -845,7 +845,7 @@ const SettingsScreen = () => {
       <View style={styles.footer}>
         <Text style={styles.version}>{t('common.app_name')} v1.0.0</Text>
         <Text style={styles.copyright}>
-          © 2024 AppLock. All rights reserved.
+          © 2025 AppLock. All rights reserved.
         </Text>
         {!biometricsAvailable && (
           <Text style={styles.debugInfo}>

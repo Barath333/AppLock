@@ -51,13 +51,6 @@ const LockScreenManager = ({
     console.log('🔧 LockScreenManager mounted - isAppLockMode:', isAppLockMode);
     initializeLockScreenManager();
 
-    // CRITICAL FIX: Add manual check for App Lock lock screen
-    if (!isAppLockMode && !showLockScreen) {
-      setTimeout(() => {
-        checkIfAppLockShouldShowLockScreen();
-      }, 1000);
-    }
-
     const appStateSubscription = AppState.addEventListener(
       'change',
       handleAppStateChange,
@@ -74,22 +67,6 @@ const LockScreenManager = ({
       if (unlockTimeoutRef.current) clearTimeout(unlockTimeoutRef.current);
     };
   }, [isAppLockMode]);
-
-  // Add this new function
-  const checkIfAppLockShouldShowLockScreen = async () => {
-    try {
-      console.log('🔍 Manually checking if App Lock should show lock screen');
-
-      if (
-        AppLockModule &&
-        typeof AppLockModule.checkAndTriggerLockScreen === 'function'
-      ) {
-        await AppLockModule.checkAndTriggerLockScreen();
-      }
-    } catch (error) {
-      console.error('❌ Error in manual lock screen check:', error);
-    }
-  };
 
   const initializeLockScreenManager = () => {
     if (hasInitialized.current) return;

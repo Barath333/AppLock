@@ -274,25 +274,20 @@ class AppAccessibilityService : AccessibilityService() {
             handler.postDelayed({
                 isLockScreenActive = false
                 Log.d("AppLockDebug", "🔄 Reset lock screen active flag")
-                
-                // Reset our own app processing state after a longer delay
-                if (packageName == OUR_APP_PACKAGE) {
-                    handler.postDelayed({
-                        isProcessingOwnApp = false
-                        Log.d("AppLockDebug", "🔄 Reset own app processing state")
-                    }, 2000)
-                }
             }, 500)
         } catch (e: Exception) {
             Log.e("AppLockDebug", "❌ FAILED to start lock screen: ${e.message}", e)
             isLockScreenActive = false
             isProcessingOwnApp = false
-            
-            // Try again after short delay
-            handler.postDelayed({
-                showLockScreen(packageName, className)
-            }, 100)
+            ownAppLockScreenShown = false
         }
+    }
+
+    // NEW METHOD: Reset our own app state when unlock is successful
+    fun resetOwnAppState() {
+        Log.d("AppLockDebug", "🔄 Resetting own app state from service")
+        isProcessingOwnApp = false
+        ownAppLockScreenShown = false
     }
 
     override fun onInterrupt() {
