@@ -73,9 +73,7 @@ const SetupScreen = () => {
 
       console.log('✅ PIN saved successfully:', result);
 
-      await AsyncStorage.setItem('setupCompleted', 'true');
-      console.log('✅ Setup marked as completed');
-
+      // Verify PIN was saved
       const credentials = await Keychain.getGenericPassword({
         service: 'applock_service',
       });
@@ -83,7 +81,9 @@ const SetupScreen = () => {
       console.log('🔑 Verified stored PIN:', !!credentials);
 
       if (credentials && credentials.password === pin) {
-        navigation.navigate('Main', {screen: 'Home'});
+        // CRITICAL CHANGE: Navigate to Security Question instead of Main app
+        console.log('🔄 PIN setup complete - navigating to Security Question');
+        navigation.replace('SecurityQuestion', {fromSetup: true});
       } else {
         showAlert(t('alerts.error'), t('errors.verification_failed'), 'error');
       }
@@ -161,7 +161,7 @@ const SetupScreen = () => {
             pin.length < 4 || confirmPin.length < 4 || !pinStrength.valid
           }
           labelStyle={styles.buttonLabel}>
-          {t('setup.complete_setup')}
+          {t('setup.continue_to_security')}
         </Button>
       </Animated.View>
     </CustomKeyboardAvoidingView>

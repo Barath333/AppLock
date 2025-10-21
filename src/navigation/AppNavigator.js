@@ -381,7 +381,7 @@ function AppNavigator({isSetupCompleted, onSetupComplete}) {
         name="SecurityQuestion"
         component={SecurityQuestionScreen}
         options={{
-          headerShown: true,
+          headerShown: false,
           title: 'Security Question',
           animationEnabled: true,
           presentation: 'modal',
@@ -403,7 +403,7 @@ function AppNavigator({isSetupCompleted, onSetupComplete}) {
         name="ForgotPin"
         component={ForgotPinScreen}
         options={{
-          headerShown: true,
+          headerShown: false,
           title: 'Forgot PIN',
           animationEnabled: true,
           presentation: 'modal',

@@ -1,7 +1,7 @@
 import React, {useState, useEffect} from 'react';
-import {View, Text, StyleSheet, ScrollView} from 'react-native';
+import {View, Text, StyleSheet, ScrollView, BackHandler} from 'react-native';
 import {TextInput, Button, Card, RadioButton} from 'react-native-paper';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useRoute} from '@react-navigation/native';
 import {useTranslation} from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useAlert} from '../contexts/AlertContext';
@@ -9,6 +9,7 @@ import CustomKeyboardAvoidingView from '../components/KeyboardAvoidingView';
 
 const SecurityQuestionScreen = () => {
   const navigation = useNavigation();
+  const route = useRoute();
   const {t} = useTranslation();
   const {showAlert} = useAlert();
   const [selectedQuestion, setSelectedQuestion] = useState('');
@@ -16,6 +17,8 @@ const SecurityQuestionScreen = () => {
   const [answer, setAnswer] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [existingQuestion, setExistingQuestion] = useState(null);
+
+  const {fromSetup = false} = route.params || {};
 
   const securityQuestions = [
     t('security_question.pet_name'),
@@ -29,7 +32,25 @@ const SecurityQuestionScreen = () => {
 
   useEffect(() => {
     loadExistingQuestion();
-  }, []);
+
+    // Handle back button - prevent going back during setup
+    if (fromSetup) {
+      const backHandler = BackHandler.addEventListener(
+        'hardwareBackPress',
+        () => {
+          // Prevent going back to setup screen during initial setup
+          showAlert(
+            t('security_question.setup_required'),
+            t('security_question.complete_setup_warning'),
+            'warning',
+          );
+          return true;
+        },
+      );
+
+      return () => backHandler.remove();
+    }
+  }, [fromSetup]);
 
   const loadExistingQuestion = async () => {
     try {
@@ -77,6 +98,11 @@ const SecurityQuestionScreen = () => {
       return;
     }
 
+    if (answer.trim().length < 3) {
+      showAlert(t('alerts.error'), t('errors.answer_too_short'), 'error');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -86,17 +112,40 @@ const SecurityQuestionScreen = () => {
         answer.trim().toLowerCase(),
       );
 
-      showAlert(
-        t('alerts.success'),
-        t('security_question.save_success'),
-        'success',
-        [
-          {
-            text: t('common.ok'),
-            onPress: () => navigation.goBack(),
-          },
-        ],
-      );
+      // CRITICAL: If this is from setup, mark setup as complete and navigate to main app
+      if (fromSetup) {
+        await AsyncStorage.setItem('setupCompleted', 'true');
+        console.log('✅ Setup completed with security question');
+
+        showAlert(
+          t('alerts.success'),
+          t('security_question.setup_complete'),
+          'success',
+          [
+            {
+              text: t('common.get_started'),
+              onPress: () => {
+                navigation.reset({
+                  index: 0,
+                  routes: [{name: 'Main'}],
+                });
+              },
+            },
+          ],
+        );
+      } else {
+        showAlert(
+          t('alerts.success'),
+          t('security_question.save_success'),
+          'success',
+          [
+            {
+              text: t('common.ok'),
+              onPress: () => navigation.goBack(),
+            },
+          ],
+        );
+      }
     } catch (error) {
       console.error('Error saving security question:', error);
       showAlert(t('alerts.error'), t('errors.save_failed'), 'error');
@@ -141,14 +190,37 @@ const SecurityQuestionScreen = () => {
     );
   };
 
+  const isFormValid =
+    selectedQuestion &&
+    (selectedQuestion !== t('security_question.custom_question') ||
+      customQuestion.trim()) &&
+    answer.trim().length >= 3;
+
   return (
     <CustomKeyboardAvoidingView style={styles.container}>
       <Card style={styles.card}>
         <Card.Content>
-          <Text style={styles.title}>{t('security_question.title')}</Text>
-          <Text style={styles.subtitle}>{t('security_question.subtitle')}</Text>
+          <Text style={styles.title}>
+            {fromSetup
+              ? t('security_question.setup_title')
+              : t('security_question.title')}
+          </Text>
 
-          {existingQuestion && (
+          <Text style={styles.subtitle}>
+            {fromSetup
+              ? t('security_question.setup_subtitle')
+              : t('security_question.subtitle')}
+          </Text>
+
+          {fromSetup && (
+            <View style={styles.importantNotice}>
+              <Text style={styles.importantText}>
+                ⚠️ {t('security_question.mandatory_notice')}
+              </Text>
+            </View>
+          )}
+
+          {existingQuestion && !fromSetup && (
             <View style={styles.existingContainer}>
               <Text style={styles.existingTitle}>
                 {t('security_question.current_question')}
@@ -182,6 +254,7 @@ const SecurityQuestionScreen = () => {
               style={styles.input}
               mode="outlined"
               placeholder={t('security_question.custom_placeholder')}
+              error={!customQuestion.trim()}
             />
           )}
 
@@ -193,20 +266,27 @@ const SecurityQuestionScreen = () => {
             mode="outlined"
             placeholder={t('security_question.answer_placeholder')}
             secureTextEntry
+            error={answer.trim().length < 3}
           />
+
+          {answer.trim().length > 0 && answer.trim().length < 3 && (
+            <Text style={styles.errorText}>{t('errors.answer_too_short')}</Text>
+          )}
 
           <Button
             mode="contained"
             onPress={handleSave}
             style={styles.saveButton}
             loading={isLoading}
-            disabled={isLoading}>
-            {existingQuestion
+            disabled={!isFormValid || isLoading}>
+            {fromSetup
+              ? t('security_question.complete_setup')
+              : existingQuestion
               ? t('security_question.update_question')
               : t('security_question.save_question')}
           </Button>
 
-          {existingQuestion && (
+          {existingQuestion && !fromSetup && (
             <Button
               mode="outlined"
               onPress={handleClear}
@@ -245,6 +325,19 @@ const styles = StyleSheet.create({
     color: '#666',
     lineHeight: 20,
   },
+  importantNotice: {
+    backgroundColor: '#FFF3E0',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+  },
+  importantText: {
+    fontSize: 14,
+    color: '#E65100',
+    fontWeight: '500',
+  },
   existingContainer: {
     backgroundColor: '#E3F2FD',
     padding: 16,
@@ -280,8 +373,14 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   input: {
-    marginBottom: 20,
+    marginBottom: 10,
     backgroundColor: 'white',
+  },
+  errorText: {
+    color: '#FF3B30',
+    fontSize: 12,
+    marginBottom: 16,
+    marginLeft: 4,
   },
   saveButton: {
     marginTop: 10,

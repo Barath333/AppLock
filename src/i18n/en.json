@@ -21,7 +21,8 @@
     "error": "Error",
     "success": "Success",
     "warning": "Warning",
-    "note": "Note"
+    "note": "Note",
+       "get_started": "Get Started"
   },
   "splash": {
     "title": "App Lock",
@@ -72,7 +73,8 @@
     "tip_4": "Avoid repeated digits",
     "tip_5": "Don't use your birth date",
     "weak_pin": "Weak PIN",
-    "pins_not_match": "PINs do not match"
+    "pins_not_match": "PINs do not match",
+     "continue_to_security": "Continue to Security Question"
   },
   "permissions": {
     "title": "App Lock",
@@ -205,24 +207,38 @@
     "clear_title": "Clear Security Question",
     "clear_confirm": "Are you sure you want to clear your security question?",
     "clear_button": "Clear",
-    "clear_success": "Security question has been cleared"
+    "clear_success": "Security question has been cleared",
+     "setup_title": "Security Question Setup",
+    "setup_subtitle": "Set up a security question to recover your PIN if you forget it",
+    "setup_required": "Setup Required",
+    "complete_setup_warning": "You must complete security question setup to use the app",
+    "mandatory_notice": "This security question is required. You'll need it to recover your PIN if you forget it.",
+    "setup_complete": "Setup complete! Your app is now secured with a PIN and recovery question.",
+    "complete_setup": "Complete Setup"
   },
   "forgot_pin": {
     "title": "Forgot PIN",
     "answer_question": "Answer your security question to reset your PIN",
     "security_question": "Your Security Question",
+    "security_answer": "Security Answer",
     "your_answer": "Your Answer",
     "enter_answer": "Please enter your answer",
+    "verify_answer": "Verify Answer",
+    "answer_correct": "Answer verified successfully!",
+    "answer_incorrect": "Incorrect answer. Please try again.",
     "incorrect_answer": "Incorrect answer. Please try again.",
     "set_new_pin": "Set your new PIN",
+    "new_pin": "New PIN",
+    "confirm_new_pin": "Confirm New PIN",
+    "enter_both_pins": "Please enter and confirm your new PIN",
     "reset_pin": "Reset PIN",
     "back_to_question": "Back to Question",
+    "pin_reset_success": "PIN reset successfully!",
     "reset_success": "PIN reset successfully!",
-    "enter_both_pins": "Please enter and confirm your new PIN",
     "no_security_question": "No security question set up",
     "no_security_question_warning": "You haven't set up a security question. The only way to reset your PIN is to reset the entire app, which will clear all your data and settings.",
     "no_recovery_option_warning": "You haven't set up any recovery option. To reset your PIN, you need to reset the entire app. This will clear all your data, locked apps, and settings.",
-    "no_security_reset_warning": "You haven't set up a security question. To reset your PIN, you need to reset the entire app. This will clear all your data and start fresh."
+    "no_security_reset_warning": "You haven't set up a security question. The only way to reset your PIN is to reset the entire app, which will remove all your settings and locked apps."
   },
   "about": {
     "title": "App Lock",
@@ -277,7 +293,8 @@
     "reset_failed_data": "Failed to reset data",
     "operation_failed": "Operation failed. Please try again.",
         "security_check_failed": "Failed to check security settings",
-    "verification_failed": "Failed to verify security answer"
+    "verification_failed": "Failed to verify security answer",
+       "answer_too_short": "Answer must be at least 3 characters long"
   },
   "alerts": {
     "success": "Success",

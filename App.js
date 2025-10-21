@@ -132,6 +132,8 @@ export default function App() {
     }
   };
 
+  // In App.js, update the handleForgotPin function:
+
   const handleForgotPin = () => {
     console.log('🔄 Handling forgot PIN - checking security setup');
 
@@ -141,8 +143,24 @@ export default function App() {
         AsyncStorage.getItem('security_answer').then(securityAnswer => {
           if (securityQuestion && securityAnswer) {
             console.log('🔐 Security Q&A exists - navigating to ForgotPin');
-            if (navigationRef.current) {
-              navigationRef.current.navigate('ForgotPin');
+
+            // If we're in lock screen mode, we need to switch to normal mode first
+            if (isLockScreenMode) {
+              console.log('🔒 Exiting lock screen mode to show Forgot PIN');
+              setIsLockScreenMode(false);
+              setPendingLockedApp(null);
+
+              // Use a small delay to ensure state updates before navigation
+              setTimeout(() => {
+                if (navigationRef.current) {
+                  navigationRef.current.navigate('ForgotPin');
+                }
+              }, 100);
+            } else {
+              // Already in normal mode, navigate directly
+              if (navigationRef.current) {
+                navigationRef.current.navigate('ForgotPin');
+              }
             }
           } else {
             console.log('⚠️ No security Q&A - showing reset warning');
