@@ -183,52 +183,73 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
         }
     }
 
-    @ReactMethod
-    fun temporarilyUnlockApp(packageName: String) {
-        try {
-            Log.d("AppLockModule", "🔓 Temporarily unlocking app: $packageName")
-            
-            // Use in-memory unlock for immediate effect
-            AppAccessibilityService.temporarilyUnlockedApps.add(packageName)
-            
-            // Also store in SharedPreferences for persistence
-            val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
-            val editor = prefs.edit()
-            
-            val currentTempUnlocked = prefs.getStringSet("tempUnlockedApps", mutableSetOf()) ?: mutableSetOf()
-            val tempUnlockedApps = HashSet<String>(currentTempUnlocked)
-            tempUnlockedApps.add(packageName)
-            editor.putStringSet("tempUnlockedApps", tempUnlockedApps)
-            editor.apply()
-            
-            Log.d("AppLockModule", "✅ Temporarily unlocked app: $packageName")
-            
-            // CRITICAL FIX: For our own app, remove temporary unlock immediately after unlock
-            // For other apps, keep it for 1 second to allow app launch
-            val unlockDuration = if (packageName == OUR_APP_PACKAGE) 100L else 1000L
-            
-            handler.postDelayed({
-                try {
-                    AppAccessibilityService.temporarilyUnlockedApps.remove(packageName)
-                    
-                    val updatedPrefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
-                    val updatedEditor = updatedPrefs.edit()
-                    val currentSet = updatedPrefs.getStringSet("tempUnlockedApps", mutableSetOf()) ?: mutableSetOf()
-                    val updatedTempUnlockedApps = HashSet<String>(currentSet)
-                    
-                    updatedTempUnlockedApps.remove(packageName)
-                    updatedEditor.putStringSet("tempUnlockedApps", updatedTempUnlockedApps)
-                    updatedEditor.apply()
-                    
-                    Log.d("AppLockModule", "⏰ Temporary unlock REMOVED for: $packageName")
-                } catch (e: Exception) {
-                    Log.e("AppLockModule", "❌ Error removing temp unlock: ${e.message}")
-                }
-            }, unlockDuration)
-        } catch (e: Exception) {
-            Log.e("AppLockModule", "❌ Error temporarily unlocking app: ${e.message}")
-        }
+@ReactMethod
+fun temporarilyUnlockApp(packageName: String) {
+    try {
+        Log.d("AppLockModule", "🔓 Temporarily unlocking app: $packageName")
+        
+        // Use in-memory unlock for immediate effect
+        AppAccessibilityService.temporarilyUnlockedApps.add(packageName)
+        
+        // Also store in SharedPreferences for persistence
+        val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+        val editor = prefs.edit()
+        
+        val currentTempUnlocked = prefs.getStringSet("tempUnlockedApps", mutableSetOf()) ?: mutableSetOf()
+        val tempUnlockedApps = HashSet<String>(currentTempUnlocked)
+        tempUnlockedApps.add(packageName)
+        editor.putStringSet("tempUnlockedApps", tempUnlockedApps)
+        editor.apply()
+        
+        Log.d("AppLockModule", "✅ Temporarily unlocked app: $packageName")
+        
+        // CRITICAL FIX: Use same duration for ALL apps to maintain consistency
+        // This ensures App Lock behaves exactly like other apps
+        handler.postDelayed({
+            try {
+                AppAccessibilityService.temporarilyUnlockedApps.remove(packageName)
+                
+                val updatedPrefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+                val updatedEditor = updatedPrefs.edit()
+                val currentSet = updatedPrefs.getStringSet("tempUnlockedApps", mutableSetOf()) ?: mutableSetOf()
+                val updatedTempUnlockedApps = HashSet<String>(currentSet)
+                
+                updatedTempUnlockedApps.remove(packageName)
+                updatedEditor.putStringSet("tempUnlockedApps", updatedTempUnlockedApps)
+                updatedEditor.apply()
+                
+                Log.d("AppLockModule", "⏰ Temporary unlock REMOVED for: $packageName")
+                Log.d("AppLockModule", "📋 Current temp unlocked apps: $updatedTempUnlockedApps")
+            } catch (e: Exception) {
+                Log.e("AppLockModule", "❌ Error removing temp unlock: ${e.message}")
+            }
+        }, 1000) // Same 1 second for ALL apps
+    } catch (e: Exception) {
+        Log.e("AppLockModule", "❌ Error temporarily unlocking app: ${e.message}")
     }
+}
+
+// NEW METHOD: Force trigger lock screen for our app
+@ReactMethod
+fun triggerLockScreenForOurApp() {
+    try {
+        Log.d("AppLockModule", "🎯 Manually triggering lock screen for our app")
+        val intent = Intent(reactApplicationContext, MainActivity::class.java).apply {
+            putExtra("lockedPackage", OUR_APP_PACKAGE)
+            putExtra("isLockScreen", true)
+            putExtra("timestamp", System.currentTimeMillis())
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        }
+        reactApplicationContext.startActivity(intent)
+        Log.d("AppLockModule", "✅ Manual lock screen triggered")
+    } catch (e: Exception) {
+        Log.e("AppLockModule", "❌ Error triggering lock screen: ${e.message}")
+    }
+}
+
+
 
     @ReactMethod
     fun closeLockScreen() {

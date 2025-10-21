@@ -32,7 +32,7 @@ const LockScreenManager = ({
   onForgotPin,
   onResetToSetup,
   isAppLockMode = false,
-  onUnlock, // Add this new prop for handling unlock callback
+  onUnlock,
 }) => {
   const {t} = useTranslation();
   const {showAlert} = useAlert();
@@ -45,10 +45,18 @@ const LockScreenManager = ({
   const lastProcessedPackage = useRef(null);
   const eventQueue = useRef([]);
   const isProcessingEvent = useRef(false);
+  const lastEventTime = useRef(0);
 
   useEffect(() => {
     console.log('🔧 LockScreenManager mounted - isAppLockMode:', isAppLockMode);
     initializeLockScreenManager();
+
+    // CRITICAL FIX: Add manual check for App Lock lock screen
+    if (!isAppLockMode && !showLockScreen) {
+      setTimeout(() => {
+        checkIfAppLockShouldShowLockScreen();
+      }, 1000);
+    }
 
     const appStateSubscription = AppState.addEventListener(
       'change',
@@ -66,6 +74,22 @@ const LockScreenManager = ({
       if (unlockTimeoutRef.current) clearTimeout(unlockTimeoutRef.current);
     };
   }, [isAppLockMode]);
+
+  // Add this new function
+  const checkIfAppLockShouldShowLockScreen = async () => {
+    try {
+      console.log('🔍 Manually checking if App Lock should show lock screen');
+
+      if (
+        AppLockModule &&
+        typeof AppLockModule.checkAndTriggerLockScreen === 'function'
+      ) {
+        await AppLockModule.checkAndTriggerLockScreen();
+      }
+    } catch (error) {
+      console.error('❌ Error in manual lock screen check:', error);
+    }
+  };
 
   const initializeLockScreenManager = () => {
     if (hasInitialized.current) return;
@@ -170,10 +194,26 @@ const LockScreenManager = ({
   const handleLockedEvent = event => {
     console.log('🎯 Lock Event Received:', event.packageName);
 
-    // SPECIAL HANDLING FOR OUR OWN APP
-    if (event.packageName === OUR_APP_PACKAGE && showLockScreen) {
-      console.log('⏭️ Ignoring duplicate lock event for our own app');
+    // CRITICAL FIX: Add event rate limiting to prevent loops
+    const currentTime = Date.now();
+    if (currentTime - lastEventTime.current < 1000) {
+      console.log('⏭️ Event too frequent, skipping to prevent loop');
       return;
+    }
+    lastEventTime.current = currentTime;
+
+    // SPECIAL HANDLING FOR OUR OWN APP - Skip duplicate events
+    if (event.packageName === OUR_APP_PACKAGE) {
+      if (showLockScreen) {
+        console.log(
+          '⏭️ Already showing lock screen for our app, skipping duplicate event',
+        );
+        return;
+      }
+      if (lastProcessedPackage.current === OUR_APP_PACKAGE) {
+        console.log('⏭️ Recently processed our app, skipping duplicate event');
+        return;
+      }
     }
 
     // If we're in AppLock mode, ignore new lock events (we're already handling one)
@@ -201,7 +241,7 @@ const LockScreenManager = ({
   const processLockEvent = event => {
     if (isProcessingEvent.current) {
       console.log('⏳ Already processing event, queuing...');
-      eventQueue.current.unshift(event);
+      eventQueue.current.unshift(event); // Put back at front of queue
       return;
     }
 

@@ -69,32 +69,54 @@ class MainActivity : ReactActivity() {
         }
     }
 
-    private fun handleIntent(intent: Intent?) {
-        if (intent == null || hasHandledCurrentIntent) {
-            return
-        }
-
-        Log.d(TAG, "📨 Processing Intent in handleIntent:")
-        Log.d(TAG, "   Action: ${intent.action}")
-        Log.d(TAG, "   Extras: ${intent.extras?.keySet()}")
-        
-        val isLockScreen = intent.getBooleanExtra("isLockScreen", false)
-        val lockedPackage = intent.getStringExtra("lockedPackage")
-        
-        if (isLockScreen && lockedPackage != null) {
-            Log.d(TAG, "🎯 LOCK SCREEN MODE ACTIVATED for: $lockedPackage")
-            activateLockScreenMode(lockedPackage, intent.getStringExtra("lockedClass"))
-            hasHandledCurrentIntent = true
-        } else {
-            Log.d(TAG, "📭 REGULAR APP MODE - No lock screen intent")
-            // If no lock screen intent, make sure we're in regular mode
-            if (isLockScreenMode) {
-                Log.d(TAG, "⚠️ Was in lock screen mode but no lock intent - resetting")
-                resetToRegularMode()
-            }
-            hasHandledCurrentIntent = true
-        }
+   private fun handleIntent(intent: Intent?) {
+    if (intent == null || hasHandledCurrentIntent) {
+        return
     }
+
+    Log.d(TAG, "📨 Processing Intent in handleIntent:")
+    Log.d(TAG, "   Action: ${intent.action}")
+    Log.d(TAG, "   Extras: ${intent.extras?.keySet()}")
+    
+    val isLockScreen = intent.getBooleanExtra("isLockScreen", false)
+    val lockedPackage = intent.getStringExtra("lockedPackage")
+    
+    if (isLockScreen && lockedPackage != null) {
+        Log.d(TAG, "🎯 LOCK SCREEN MODE ACTIVATED for: $lockedPackage")
+        
+        // CRITICAL FIX: Clear any previous state when new lock screen intent comes
+        resetToRegularMode()
+        
+        activateLockScreenMode(lockedPackage, intent.getStringExtra("lockedClass"))
+        hasHandledCurrentIntent = true
+    } else {
+        Log.d(TAG, "📭 REGULAR APP MODE - No lock screen intent")
+        
+        // CRITICAL FIX: Check if our app should be in lock screen mode
+        val lockedApps = prefs.getStringSet("lockedApps", setOf()) ?: setOf()
+        if (lockedApps.contains(OUR_APP_PACKAGE) && !isLockScreenMode) {
+            Log.d(TAG, "⚠️ Our app is locked but not in lock screen mode - checking...")
+            
+            // Check if we have a pending locked app
+            val pendingPackage = prefs.getString("pendingLockedPackage", null)
+            val pendingTimestamp = prefs.getLong("pendingLockedTimestamp", 0)
+            
+            if (pendingPackage == OUR_APP_PACKAGE && System.currentTimeMillis() - pendingTimestamp < 30000) {
+                Log.d(TAG, "🚨 Found pending lock for our app - activating lock screen")
+                activateLockScreenMode(OUR_APP_PACKAGE, null)
+                hasHandledCurrentIntent = true
+                return
+            }
+        }
+        
+        // If no lock screen intent, make sure we're in regular mode
+        if (isLockScreenMode) {
+            Log.d(TAG, "⚠️ Was in lock screen mode but no lock intent - resetting")
+            resetToRegularMode()
+        }
+        hasHandledCurrentIntent = true
+    }
+}
 
     private fun activateLockScreenMode(packageName: String, className: String?) {
         Log.d(TAG, "🛡️ ACTIVATING LOCK SCREEN MODE for: $packageName")

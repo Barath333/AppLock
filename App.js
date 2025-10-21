@@ -52,6 +52,7 @@ export default function App() {
   const [securityWarning, setSecurityWarning] = useState(null);
   const [isSetupCompleted, setIsSetupCompleted] = useState(null);
   const [appState, setAppState] = useState('active');
+  const [isAppLocked, setIsAppLocked] = useState(false);
 
   const navigationRef = useRef();
 
@@ -60,6 +61,7 @@ export default function App() {
     checkSetupStatus();
     checkSecurity();
     checkLockScreenMode();
+    checkIfAppLockIsLocked();
 
     // Listen for app state changes
     const subscription = AppState.addEventListener(
@@ -77,8 +79,12 @@ export default function App() {
     setAppState(nextAppState);
 
     if (nextAppState === 'active') {
-      // Check if we need to show lock screen when app becomes active
-      checkLockScreenMode();
+      console.log('📱 App became active - checking lock status');
+      // When app becomes active, check if we should show lock screen
+      setTimeout(() => {
+        checkIfAppLockIsLocked();
+        checkLockScreenMode();
+      }, 100);
     }
   };
 
@@ -90,6 +96,39 @@ export default function App() {
     } catch (error) {
       console.error('Error checking setup status:', error);
       setIsSetupCompleted(false);
+    }
+  };
+
+  // CRITICAL FIX: Check if App Lock itself is locked
+  const checkIfAppLockIsLocked = async () => {
+    try {
+      console.log('🔍 Checking if App Lock is locked...');
+      const lockedApps = await AsyncStorage.getItem('lockedApps');
+
+      if (lockedApps) {
+        const lockedAppsArray = JSON.parse(lockedApps);
+        const isLocked = lockedAppsArray.includes('com.applock');
+        console.log('🔒 App Lock locked status:', isLocked);
+        setIsAppLocked(isLocked);
+
+        // If App Lock is locked and we're not already in lock screen mode, force it
+        if (isLocked && !isLockScreenMode && !pendingLockedApp) {
+          console.log('🚨 App Lock is LOCKED - forcing lock screen mode');
+
+          // Create a fake locked app event for our own app
+          const lockedAppEvent = {
+            packageName: 'com.applock',
+            className: null,
+            timestamp: Date.now().toString(),
+          };
+
+          setIsLockScreenMode(true);
+          setPendingLockedApp(lockedAppEvent);
+          setIsSplashVisible(false);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error checking if App Lock is locked:', error);
     }
   };
 
@@ -111,6 +150,7 @@ export default function App() {
       console.log('✅ App reset successfully');
       setIsSetupCompleted(false);
       setIsLockScreenMode(false);
+      setIsAppLocked(false);
       if (navigationRef.current) {
         navigationRef.current.reset({
           index: 0,
@@ -174,12 +214,14 @@ export default function App() {
   const checkLockScreenMode = async () => {
     try {
       console.log('🔍 Checking if app started in lock screen mode...');
+
+      // First check for pending locked app from accessibility service
       if (
         AppLockModule &&
         typeof AppLockModule.getPendingLockedApp === 'function'
       ) {
         const pendingApp = await AppLockModule.getPendingLockedApp();
-        console.log('📦 Pending locked app:', pendingApp);
+        console.log('📦 Pending locked app from service:', pendingApp);
 
         if (pendingApp && pendingApp.packageName) {
           console.log(
@@ -192,6 +234,15 @@ export default function App() {
           return;
         }
       }
+
+      // CRITICAL FIX: If no pending app but App Lock is locked, force lock screen
+      await checkIfAppLockIsLocked();
+
+      // If we're already in lock screen mode from the check above, return
+      if (isLockScreenMode && pendingLockedApp) {
+        return;
+      }
+
       console.log('📭 App started in normal mode');
       // Only show splash if not in lock screen mode
       if (!isLockScreenMode) {
@@ -217,6 +268,14 @@ export default function App() {
     console.log('✅ App unlocked - switching to normal mode');
     setIsLockScreenMode(false);
     setPendingLockedApp(null);
+
+    // Force clear any temporary unlocks for our app
+    if (
+      AppLockModule &&
+      typeof AppLockModule.clearTemporaryUnlocks === 'function'
+    ) {
+      AppLockModule.clearTemporaryUnlocks();
+    }
   };
 
   // Show loading state while checking setup status
@@ -244,7 +303,7 @@ export default function App() {
                 onForgotPin={handleForgotPin}
                 onResetToSetup={handleResetToSetup}
                 isAppLockMode={true}
-                onUnlock={handleAppUnlock} // Add this callback
+                onUnlock={handleAppUnlock}
               />
             </PaperProvider>
           </AlertProvider>
