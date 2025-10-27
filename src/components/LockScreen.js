@@ -136,6 +136,8 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
       if (credentials && credentials.password === pin) {
         console.log('✅ PIN verified successfully');
         await resetFailedAttempts();
+        
+        // CRITICAL FIX: Only call onUnlock after successful PIN verification
         if (onUnlock) {
           console.log('🔄 Calling onUnlock callback');
           onUnlock();

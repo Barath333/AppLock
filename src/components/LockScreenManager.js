@@ -46,6 +46,8 @@ const LockScreenManager = ({
   const eventQueue = useRef([]);
   const isProcessingEvent = useRef(false);
   const lastEventTime = useRef(0);
+  const permanentlyUnlockedApps = useRef(new Set()); // Track permanently unlocked apps
+  const appLaunchState = useRef(new Map()); // Track app launch state
 
   useEffect(() => {
     console.log('🔧 LockScreenManager mounted - isAppLockMode:', isAppLockMode);
@@ -124,6 +126,9 @@ const LockScreenManager = ({
       setIsUnlocking(false);
       lastProcessedPackage.current = null;
       if (unlockTimeoutRef.current) clearTimeout(unlockTimeoutRef.current);
+      
+      // Close all app sessions when our app goes to background
+      closeAllAppSessions();
     } else if (nextAppState === 'active') {
       console.log('📱 App became active');
       checkAccessibilityService();
@@ -148,6 +153,52 @@ const LockScreenManager = ({
     return false;
   };
 
+  // NEW: Close all app sessions
+  const closeAllAppSessions = () => {
+    permanentlyUnlockedApps.current.forEach(packageName => {
+      if (AppLockModule && typeof AppLockModule.closeAppSession === 'function') {
+        AppLockModule.closeAppSession(packageName);
+      }
+    });
+    permanentlyUnlockedApps.current.clear();
+    appLaunchState.current.clear();
+    console.log('🔚 Closed all app sessions');
+  };
+
+  // NEW: Check if app is permanently unlocked
+  const isAppPermanentlyUnlocked = (packageName) => {
+    return permanentlyUnlockedApps.current.has(packageName);
+  };
+
+  // NEW: Check if app is freshly launched
+  const isAppFreshlyLaunched = async (packageName) => {
+    try {
+      if (AppLockModule && typeof AppLockModule.isAppFreshlyLaunched === 'function') {
+        const isFresh = await AppLockModule.isAppFreshlyLaunched(packageName);
+        console.log('🔍 App freshly launched check:', packageName, isFresh);
+        return isFresh;
+      }
+      return false;
+    } catch (error) {
+      console.error('❌ Error checking app launch state:', error);
+      return false;
+    }
+  };
+
+  // NEW: Mark app as no longer freshly launched
+  const markAppAsOpened = (packageName) => {
+    if (AppLockModule && typeof AppLockModule.markAppAsOpened === 'function') {
+      AppLockModule.markAppAsOpened(packageName);
+    }
+    appLaunchState.current.set(packageName, false);
+  };
+
+  // NEW: Permanently unlock app (called AFTER successful PIN verification)
+  const permanentlyUnlockApp = (packageName) => {
+    permanentlyUnlockedApps.current.add(packageName);
+    console.log('🔓 PERMANENTLY unlocked app until closed:', packageName);
+  };
+
   const checkPendingLockedApp = async () => {
     try {
       console.log('🔍 Checking for pending locked app...');
@@ -168,8 +219,23 @@ const LockScreenManager = ({
     }
   };
 
-  const handleLockedEvent = event => {
+  const handleLockedEvent = async (event) => {
     console.log('🎯 Lock Event Received:', event.packageName);
+
+    const { packageName } = event;
+
+    // CRITICAL FIX: Check if app is permanently unlocked
+    if (isAppPermanentlyUnlocked(packageName)) {
+      console.log('⏭️ App is permanently unlocked, skipping lock event');
+      return;
+    }
+
+    // CRITICAL FIX: Check if app is freshly launched
+    const isFreshLaunch = await isAppFreshlyLaunched(packageName);
+    if (!isFreshLaunch) {
+      console.log('⏭️ App is not freshly launched, skipping lock event');
+      return;
+    }
 
     // CRITICAL FIX: Add event rate limiting to prevent loops
     const currentTime = Date.now();
@@ -180,7 +246,7 @@ const LockScreenManager = ({
     lastEventTime.current = currentTime;
 
     // SPECIAL HANDLING FOR OUR OWN APP - Skip duplicate events
-    if (event.packageName === OUR_APP_PACKAGE) {
+    if (packageName === OUR_APP_PACKAGE) {
       if (showLockScreen) {
         console.log(
           '⏭️ Already showing lock screen for our app, skipping duplicate event',
@@ -215,7 +281,7 @@ const LockScreenManager = ({
     processLockEvent(event);
   };
 
-  const processLockEvent = event => {
+  const processLockEvent = async (event) => {
     if (isProcessingEvent.current) {
       console.log('⏳ Already processing event, queuing...');
       eventQueue.current.unshift(event); // Put back at front of queue
@@ -239,6 +305,23 @@ const LockScreenManager = ({
       return;
     }
 
+    // CRITICAL FIX: Check if app is permanently unlocked
+    if (isAppPermanentlyUnlocked(packageName)) {
+      console.log('⏭️ App is permanently unlocked, skipping lock screen');
+      isProcessingEvent.current = false;
+      processNextQueuedEvent();
+      return;
+    }
+
+    // CRITICAL FIX: Check if app is freshly launched
+    const isFreshLaunch = await isAppFreshlyLaunched(packageName);
+    if (!isFreshLaunch) {
+      console.log('⏭️ App is not freshly launched, skipping lock screen');
+      isProcessingEvent.current = false;
+      processNextQueuedEvent();
+      return;
+    }
+
     console.log('🚨 PROCESSING Lock Screen for:', packageName);
     isProcessingEvent.current = true;
     lastProcessedPackage.current = packageName;
@@ -253,6 +336,9 @@ const LockScreenManager = ({
 
     setCurrentApp(appInfo);
     setShowLockScreen(true);
+
+    // Mark app as no longer freshly launched to prevent duplicate lock screens
+    markAppAsOpened(packageName);
 
     // Bring app to front and mark event as processed
     setTimeout(() => {
@@ -303,16 +389,11 @@ const LockScreenManager = ({
       if (currentApp?.packageName) {
         console.log('🚀 Handling unlock for:', currentApp.packageName);
 
+        // CRITICAL FIX: Permanently unlock the app ONLY AFTER successful PIN verification
+        permanentlyUnlockApp(currentApp.packageName);
+
         // Reset last processed package
         lastProcessedPackage.current = null;
-
-        // Temporarily unlock the app
-        if (
-          AppLockModule &&
-          typeof AppLockModule.temporarilyUnlockApp === 'function'
-        ) {
-          await AppLockModule.temporarilyUnlockApp(currentApp.packageName);
-        }
 
         // SPECIAL HANDLING FOR OUR OWN APP
         if (currentApp.packageName === OUR_APP_PACKAGE) {
