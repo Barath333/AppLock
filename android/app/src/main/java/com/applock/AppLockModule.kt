@@ -141,6 +141,9 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
                     if (packageName == OUR_APP_PACKAGE) {
                         Log.d("AppLockModule", "🏠 Launching our own app after unlock")
                         
+                        // CRITICAL FIX: Reset the accessibility service state for our app
+                        resetAccessibilityServiceState()
+                        
                         // Just finish the current activity (lock screen)
                         currentActivity?.finish()
                         return@post
@@ -197,39 +200,28 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
         }
     }
 
-    // NEW METHOD: Close app session (call this when app goes to background or is closed)
+    // NEW METHOD: Close app session (call this when app goes to background)
     @ReactMethod
     fun closeAppSession(packageName: String) {
         try {
             AppAccessibilityService.permanentlyUnlockedApps.remove(packageName)
-            AppAccessibilityService.appLaunchState.remove(packageName)
             Log.d("AppLockModule", "🔚 Closed app session for: $packageName")
         } catch (e: Exception) {
             Log.e("AppLockModule", "❌ Error closing app session: ${e.message}")
         }
     }
 
-    // NEW METHOD: Check if app is freshly launched
-    @ReactMethod
-    fun isAppFreshlyLaunched(packageName: String, promise: Promise) {
+    // NEW METHOD: Reset accessibility service state for our app
+    private fun resetAccessibilityServiceState() {
         try {
-            val isFresh = AppAccessibilityService.isAppFreshlyLaunched(packageName)
-            Log.d("AppLockModule", "🔍 App $packageName freshly launched: $isFresh")
-            promise.resolve(isFresh)
+            // This is a workaround to reset the accessibility service state
+            val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+            val editor = prefs.edit()
+            editor.putLong("lastAppLockUnlockTime", System.currentTimeMillis())
+            editor.apply()
+            Log.d("AppLockModule", "🔄 Reset accessibility service state for our app")
         } catch (e: Exception) {
-            Log.e("AppLockModule", "❌ Error checking app launch state: ${e.message}")
-            promise.resolve(false)
-        }
-    }
-
-    // NEW METHOD: Mark app as no longer freshly launched
-    @ReactMethod
-    fun markAppAsOpened(packageName: String) {
-        try {
-            AppAccessibilityService.markAppAsOpened(packageName)
-            Log.d("AppLockModule", "📝 Marked app as opened: $packageName")
-        } catch (e: Exception) {
-            Log.e("AppLockModule", "❌ Error marking app as opened: ${e.message}")
+            Log.e("AppLockModule", "❌ Error resetting accessibility service state: ${e.message}")
         }
     }
 
@@ -422,22 +414,11 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
                     AppAccessibilityService.permanentlyUnlockedApps.forEach { array.pushString(it) }
                     array
                 }())
-                putArray("appLaunchState", {
-                    val array = WritableNativeArray()
-                    AppAccessibilityService.appLaunchState.forEach { (pkg, state) ->
-                        val map = WritableNativeMap()
-                        map.putString("package", pkg)
-                        map.putBoolean("fresh", state)
-                        array.pushMap(map)
-                    }
-                    array
-                }())
             }
             
             Log.d("AppLockModule", "🐛 DEBUG - Locked Apps: $lockedApps")
             Log.d("AppLockModule", "🐛 DEBUG - Temp Unlocked Apps: ${AppAccessibilityService.temporarilyUnlockedApps}")
             Log.d("AppLockModule", "🐛 DEBUG - Permanent Unlocked Apps: ${AppAccessibilityService.permanentlyUnlockedApps}")
-            Log.d("AppLockModule", "🐛 DEBUG - App Launch State: ${AppAccessibilityService.appLaunchState}")
             
             promise.resolve(result)
         } catch (e: Exception) {
@@ -501,7 +482,6 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
             
             AppAccessibilityService.temporarilyUnlockedApps.clear()
             AppAccessibilityService.permanentlyUnlockedApps.clear()
-            AppAccessibilityService.appLaunchState.clear()
             
             Log.d("AppLockModule", "✅ All temporary unlocks cleared")
         } catch (e: Exception) {

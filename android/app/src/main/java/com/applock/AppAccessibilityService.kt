@@ -18,16 +18,14 @@ class AppAccessibilityService : AccessibilityService() {
     private var lastLockTime: Long = 0
     private val LOCK_COOLDOWN = 2000L
     
-    // Track foreground app changes
-    private var currentForegroundApp: String? = null
-    private var previousForegroundApp: String? = null
+    // Track if we're currently processing our own app
+    private var isProcessingOwnApp = false
+    private var ownAppLockScreenShown = false
+    private var lastLockEventTime: Long = 0
 
     companion object {
         val temporarilyUnlockedApps = mutableSetOf<String>()
         val permanentlyUnlockedApps = mutableSetOf<String>() // Apps unlocked until closed
-        
-        // Track app launch state to detect when apps are freshly opened
-        val appLaunchState = mutableMapOf<String, Boolean>()
     }
 
     override fun onServiceConnected() {
@@ -43,7 +41,8 @@ class AppAccessibilityService : AccessibilityService() {
         event?.let {
             // CRITICAL FIX: Skip events that are too frequent to prevent loops
             val currentTime = System.currentTimeMillis()
-            if (currentTime - lastLockTime < 300) {
+            if (currentTime - lastLockEventTime < 300) {
+                Log.d("AppLockDebug", "⏭️ Event too frequent, skipping to prevent loop")
                 return
             }
             
@@ -55,6 +54,7 @@ class AppAccessibilityService : AccessibilityService() {
                 }
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
                     // Skip content changed events to reduce noise
+                    Log.d("AppLockDebug", "⏭️ Skipping content changed event")
                 }
                 else -> {
                     // Handle other events if needed
@@ -67,33 +67,18 @@ class AppAccessibilityService : AccessibilityService() {
         val packageName = event.packageName?.toString()
         val className = event.className?.toString()
         
+        Log.d("AppLockDebug", "🏠 Window State Changed - Package: $packageName, Class: $className")
+        
         if (packageName != null) {
-            Log.d("AppLockDebug", "🏠 Window State Changed - Package: $packageName, Class: $className")
-            
-            // Track app transitions
-            previousForegroundApp = currentForegroundApp
-            currentForegroundApp = packageName
-            
-            // Check if this is a fresh app launch (app wasn't previously in foreground)
-            val isFreshLaunch = previousForegroundApp != packageName && 
-                               !isSystemApp(packageName) && 
-                               !isOurApp(packageName)
-            
-            if (isFreshLaunch) {
-                Log.d("AppLockDebug", "🚀 Fresh app launch detected: $packageName")
-                // Reset app launch state for this package
-                appLaunchState[packageName] = true
-            }
-            
             // CRITICAL FIX: Add cooldown period to prevent rapid repeated events
             val currentTime = System.currentTimeMillis()
-            if (currentTime - lastLockTime < 1500) {
+            if (currentTime - lastLockEventTime < 1500) {
                 Log.d("AppLockDebug", "⏭️ In cooldown period, skipping")
                 return
             }
             
             // CRITICAL FIX: Skip our own app if we're already processing it
-            if (packageName == OUR_APP_PACKAGE && isLockScreenActive) {
+            if (packageName == OUR_APP_PACKAGE && isProcessingOwnApp) {
                 Log.d("AppLockDebug", "⏭️ Already processing our own app, skipping")
                 return
             }
@@ -107,12 +92,6 @@ class AppAccessibilityService : AccessibilityService() {
             // Skip system/launcher apps
             if (isSystemApp(packageName)) {
                 Log.d("AppLockDebug", "⏭️ Skipping system app: $packageName")
-                return
-            }
-            
-            // Skip our own app when not in lock screen mode
-            if (isOurApp(packageName) && !isLockScreenActive) {
-                Log.d("AppLockDebug", "⏭️ Skipping our own app (not in lock screen mode): $packageName")
                 return
             }
             
@@ -134,10 +113,22 @@ class AppAccessibilityService : AccessibilityService() {
             if (lockedApps.contains(packageName)) {
                 Log.d("AppLockDebug", "🚨 LOCKED APP DETECTED: $packageName")
                 
-                // Update last lock time
-                lastLockTime = currentTime
+                // Update last lock event time
+                lastLockEventTime = currentTime
+                
+                // SPECIAL HANDLING FOR OUR OWN APP
+                if (packageName == OUR_APP_PACKAGE) {
+                    if (ownAppLockScreenShown) {
+                        Log.d("AppLockDebug", "⏭️ Our own app lock screen already shown, skipping")
+                        return
+                    }
+                    isProcessingOwnApp = true
+                    ownAppLockScreenShown = true
+                    Log.d("AppLockDebug", "🔒 Handling our own app lock")
+                }
                 
                 isLockScreenActive = true
+                lastLockTime = System.currentTimeMillis()
                 showLockScreen(packageName, className)
             } else {
                 Log.d("AppLockDebug", "✅ App $packageName is not locked")
@@ -147,9 +138,10 @@ class AppAccessibilityService : AccessibilityService() {
         }
     }
 
-    // NEW METHOD: Check if package is our app
-    private fun isOurApp(packageName: String): Boolean {
-        return packageName == OUR_APP_PACKAGE
+    // NEW METHOD: Check if user is currently interacting with the app
+    private fun isUserCurrentlyInteractingWithApp(packageName: String): Boolean {
+        // This is now handled by permanent unlock mechanism
+        return false
     }
 
     // NEW METHOD: Mark app as permanently unlocked (until app is closed)
@@ -169,18 +161,7 @@ class AppAccessibilityService : AccessibilityService() {
     // NEW METHOD: Close app session (when app is no longer in foreground)
     fun closeAppSession(packageName: String) {
         permanentlyUnlockedApps.remove(packageName)
-        appLaunchState.remove(packageName)
         Log.d("AppLockDebug", "🔚 Closed app session for: $packageName")
-    }
-
-    // NEW METHOD: Check if app was freshly launched
-    fun isAppFreshlyLaunched(packageName: String): Boolean {
-        return appLaunchState[packageName] == true
-    }
-
-    // NEW METHOD: Mark app as no longer freshly launched
-    fun markAppAsOpened(packageName: String) {
-        appLaunchState[packageName] = false
     }
 
     private fun isAppTemporarilyUnlocked(packageName: String): Boolean {
@@ -238,7 +219,16 @@ class AppAccessibilityService : AccessibilityService() {
         } catch (e: Exception) {
             Log.e("AppLockDebug", "❌ FAILED to start lock screen: ${e.message}", e)
             isLockScreenActive = false
+            isProcessingOwnApp = false
+            ownAppLockScreenShown = false
         }
+    }
+
+    // NEW METHOD: Reset our own app state when unlock is successful
+    fun resetOwnAppState() {
+        Log.d("AppLockDebug", "🔄 Resetting own app state from service")
+        isProcessingOwnApp = false
+        ownAppLockScreenShown = false
     }
 
     override fun onInterrupt() {
