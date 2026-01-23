@@ -41,8 +41,8 @@ class AppAccessibilityService : AccessibilityService() {
         
         // Timeout for considering an app closed (5 seconds)
         private const val APP_CLOSE_TIMEOUT = 5000L
-
-        // NEW: Companion object methods to access from AppLockModule
+        
+        // Companion object methods
         fun unlockApp(packageName: String) {
             synchronized(lock) {
                 unlockedApps[packageName] = System.currentTimeMillis()
@@ -114,7 +114,7 @@ class AppAccessibilityService : AccessibilityService() {
         
         if (packageName != null) {
             // CRITICAL FIX: Track app lifecycle
-            trackAppLifecycle(packageName, className)
+            trackAppLifecycle(packageName)
             
             // CRITICAL FIX: Add cooldown period to prevent rapid repeated events
             val currentTime = System.currentTimeMillis()
@@ -138,8 +138,10 @@ class AppAccessibilityService : AccessibilityService() {
             // Skip system/launcher apps
             if (isSystemApp(packageName)) {
                 Log.d("AppLockDebug", "⏭️ Skipping system app: $packageName")
-                // If switching from unlocked app to system app, check if unlocked app was closed
-                checkIfUnlockedAppWasClosed(packageName)
+                // Only check for closed apps when going to HOME/LAUNCHER, not other system apps
+                if (isHomeLauncher(packageName)) {
+                    checkForClosedApps(currentTime)
+                }
                 return
             }
             
@@ -180,76 +182,65 @@ class AppAccessibilityService : AccessibilityService() {
         }
     }
 
-    // NEW METHOD: Track app lifecycle to detect when apps are closed
-    private fun trackAppLifecycle(newPackageName: String, newClassName: String?) {
+    // SIMPLIFIED METHOD: Track app lifecycle
+    private fun trackAppLifecycle(newPackageName: String) {
         val currentTime = System.currentTimeMillis()
         
         synchronized(lock) {
-            // Update recent foreground apps
+            // Always update recent foreground apps
             recentForegroundApps[newPackageName] = currentTime
             
-            // Check if this is a new app (user switched to different app)
+            // Only update current foreground if it's a different app (not just different activity in same app)
             if (currentForegroundPackage != newPackageName) {
                 val previousPackage = currentForegroundPackage
                 currentForegroundPackage = newPackageName
-                currentForegroundClassName = newClassName
                 currentForegroundStartTime = currentTime
                 
                 if (previousPackage != null) {
                     Log.d("AppLockDebug", "🔄 User switched from $previousPackage to $newPackageName")
-                    
-                    // Check if previous app was unlocked and might be closed
-                    if (isAppCurrentlyUnlocked(previousPackage)) {
-                        Log.d("AppLockDebug", "📱 Previous unlocked app ($previousPackage) is now in background")
-                        // Don't remove from unlocked yet - wait to see if it's actually closed
-                    }
                 }
             } else {
                 // Same app, just different activity - update timestamp
-                Log.d("AppLockDebug", "📱 User still in same app: $newPackageName")
-            }
-            
-            // Clean up old entries from recentForegroundApps
-            val iterator = recentForegroundApps.entries.iterator()
-            while (iterator.hasNext()) {
-                val entry = iterator.next()
-                if (currentTime - entry.value > APP_CLOSE_TIMEOUT * 2) {
-                    iterator.remove()
-                }
+                recentForegroundApps[newPackageName] = currentTime
             }
             
             // Check if any unlocked apps haven't been seen recently (they're closed)
-            checkForClosedApps(currentTime)
+            // Only check every few seconds to reduce overhead
+            if (currentTime % 3000 < 100) { // Check approximately every 3 seconds
+                checkForClosedApps(currentTime)
+            }
         }
     }
 
     // NEW METHOD: Check if unlocked apps have been closed
     private fun checkForClosedApps(currentTime: Long) {
-        val iterator = unlockedApps.entries.iterator()
-        while (iterator.hasNext()) {
-            val entry = iterator.next()
-            val packageName = entry.key
-            
-            // If app hasn't been in foreground recently AND it's not the current foreground app
-            val lastSeen = recentForegroundApps[packageName]
-            if (lastSeen == null || currentTime - lastSeen > APP_CLOSE_TIMEOUT) {
-                if (packageName != currentForegroundPackage) {
-                    Log.d("AppLockDebug", "🚪 App $packageName appears to be CLOSED (not seen in ${APP_CLOSE_TIMEOUT}ms)")
-                    iterator.remove()
-                    
-                    // Also remove from recent foreground tracking
-                    recentForegroundApps.remove(packageName)
+        synchronized(lock) {
+            val iterator = unlockedApps.entries.iterator()
+            while (iterator.hasNext()) {
+                val entry = iterator.next()
+                val packageName = entry.key
+                
+                // If app hasn't been in foreground recently AND it's not the current foreground app
+                val lastSeen = recentForegroundApps[packageName]
+                if (lastSeen == null || currentTime - lastSeen > APP_CLOSE_TIMEOUT) {
+                    if (packageName != currentForegroundPackage) {
+                        Log.d("AppLockDebug", "🚪 App $packageName appears to be CLOSED (not seen in ${APP_CLOSE_TIMEOUT}ms)")
+                        iterator.remove()
+                        
+                        // Also remove from recent foreground tracking
+                        recentForegroundApps.remove(packageName)
+                    }
                 }
             }
-        }
-    }
-
-    // NEW METHOD: Check if switching to system app means unlocked app was closed
-    private fun checkIfUnlockedAppWasClosed(systemPackageName: String) {
-        // If switching to system app (home/launcher), check all unlocked apps
-        if (isSystemApp(systemPackageName)) {
-            val currentTime = System.currentTimeMillis()
-            checkForClosedApps(currentTime)
+            
+            // Clean up old entries from recentForegroundApps
+            val recentIterator = recentForegroundApps.entries.iterator()
+            while (recentIterator.hasNext()) {
+                val entry = recentIterator.next()
+                if (currentTime - entry.value > APP_CLOSE_TIMEOUT * 2) {
+                    recentIterator.remove()
+                }
+            }
         }
     }
 
@@ -260,21 +251,26 @@ class AppAccessibilityService : AccessibilityService() {
         }
     }
 
+    // IMPROVED METHOD: More precise system app detection
     private fun isSystemApp(packageName: String): Boolean {
-        return (packageName.contains("android") || 
-               packageName.contains("google") || 
-               packageName.contains("system") || 
-               packageName.contains("launcher") ||
-               packageName.contains("sec.android") ||
-               packageName.contains("com.samsung") ||
-               packageName.contains("com.orange") ||
-               packageName.startsWith("com.android.") ||
-               packageName.startsWith("com.sec.") ||
-               packageName.startsWith("com.google.android.") ||
-               packageName == "com.android.settings" ||
-               packageName == "com.android.systemui" ||
+        // Only consider true system/launcher apps, not all system services
+        return (packageName.contains(".launcher") ||
+               packageName.contains("launcher.") ||
+               packageName == "com.android.launcher3" ||
+               packageName == "com.google.android.apps.nexuslauncher" ||
                packageName == "com.sec.android.app.launcher" ||
-               packageName == "com.google.android.apps.nexuslauncher")
+               packageName == "com.android.systemui" ||
+               packageName == "com.android.settings" ||
+               packageName.startsWith("com.google.android.googlequicksearchbox"))
+    }
+
+    // NEW METHOD: Check if it's a home launcher (more specific)
+    private fun isHomeLauncher(packageName: String): Boolean {
+        return (packageName.contains(".launcher") ||
+               packageName.contains("launcher.") ||
+               packageName == "com.android.launcher3" ||
+               packageName == "com.google.android.apps.nexuslauncher" ||
+               packageName == "com.sec.android.app.launcher")
     }
 
     private fun showLockScreen(packageName: String, className: String?) {
