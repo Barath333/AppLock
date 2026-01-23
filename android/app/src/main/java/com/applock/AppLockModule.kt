@@ -132,8 +132,8 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
         try {
             Log.d("AppLockModule", "🚀 Launching original app: $packageName")
             
-            // CRITICAL FIX: Permanently unlock the app until it's closed
-            permanentlyUnlockApp(packageName)
+            // CRITICAL FIX: Unlock the app (will be locked when app is closed)
+            AppAccessibilityService.unlockApp(packageName)
             
             handler.post {
                 try {
@@ -155,7 +155,8 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
                         // Clear any existing flags and set proper ones
                         launchIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
                                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                                           Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                           Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                                           Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
                         
                         // Start the original app
                         reactContext.startActivity(launchIntent)
@@ -169,7 +170,7 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
                             } catch (e: Exception) {
                                 Log.e("AppLockModule", "❌ Error closing lock screen: ${e.message}")
                             }
-                        }, 500)
+                        }, 300)
                         
                     } else {
                         Log.e("AppLockModule", "❌ No launch intent found for: $packageName")
@@ -187,27 +188,27 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
         }
     }
 
-    // NEW METHOD: Permanently unlock app until it's closed (called AFTER successful PIN verification)
-    fun permanentlyUnlockApp(packageName: String) {
+    // NEW METHOD: Force lock an app (when user manually locks from settings)
+    @ReactMethod
+    fun forceLockApp(packageName: String) {
         try {
-            AppAccessibilityService.permanentlyUnlockedApps.add(packageName)
-            Log.d("AppLockModule", "🔓 PERMANENTLY unlocked app until closed: $packageName")
-            
-            // Also add to temporary unlocks as backup
-            temporarilyUnlockApp(packageName)
+            AppAccessibilityService.forceLockApp(packageName)
+            Log.d("AppLockModule", "🔒 Force locked app: $packageName")
         } catch (e: Exception) {
-            Log.e("AppLockModule", "❌ Error permanently unlocking app: ${e.message}")
+            Log.e("AppLockModule", "❌ Error force locking app: ${e.message}")
         }
     }
 
-    // NEW METHOD: Close app session (call this when app goes to background)
+    // NEW METHOD: Check if app should be locked on open
     @ReactMethod
-    fun closeAppSession(packageName: String) {
+    fun shouldLockAppOnOpen(packageName: String, promise: Promise) {
         try {
-            AppAccessibilityService.permanentlyUnlockedApps.remove(packageName)
-            Log.d("AppLockModule", "🔚 Closed app session for: $packageName")
+            val shouldLock = AppAccessibilityService.shouldLockAppOnOpen(packageName)
+            Log.d("AppLockModule", "🔍 Should lock $packageName on open: $shouldLock")
+            promise.resolve(shouldLock)
         } catch (e: Exception) {
-            Log.e("AppLockModule", "❌ Error closing app session: ${e.message}")
+            Log.e("AppLockModule", "❌ Error checking if app should lock: ${e.message}")
+            promise.reject("SHOULD_LOCK_ERROR", e.message)
         }
     }
 
@@ -222,30 +223,6 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
             Log.d("AppLockModule", "🔄 Reset accessibility service state for our app")
         } catch (e: Exception) {
             Log.e("AppLockModule", "❌ Error resetting accessibility service state: ${e.message}")
-        }
-    }
-
-    @ReactMethod
-    fun temporarilyUnlockApp(packageName: String) {
-        try {
-            Log.d("AppLockModule", "🔓 Temporarily unlocking app: $packageName")
-            
-            // Use in-memory unlock for immediate effect
-            AppAccessibilityService.temporarilyUnlockedApps.add(packageName)
-            
-            Log.d("AppLockModule", "✅ Temporarily unlocked app: $packageName")
-            
-            // Remove temporary unlock after longer duration (as backup)
-            handler.postDelayed({
-                try {
-                    AppAccessibilityService.temporarilyUnlockedApps.remove(packageName)
-                    Log.d("AppLockModule", "⏰ Temporary unlock REMOVED for: $packageName")
-                } catch (e: Exception) {
-                    Log.e("AppLockModule", "❌ Error removing temp unlock: ${e.message}")
-                }
-            }, 30000L) // 30 seconds as backup
-        } catch (e: Exception) {
-            Log.e("AppLockModule", "❌ Error temporarily unlocking app: ${e.message}")
         }
     }
 
@@ -404,21 +381,15 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
                     lockedApps.forEach { array.pushString(it) }
                     array
                 }())
-                putArray("memoryUnlockedApps", {
+                putArray("unlockedApps", {
                     val array = WritableNativeArray()
-                    AppAccessibilityService.temporarilyUnlockedApps.forEach { array.pushString(it) }
-                    array
-                }())
-                putArray("permanentlyUnlockedApps", {
-                    val array = WritableNativeArray()
-                    AppAccessibilityService.permanentlyUnlockedApps.forEach { array.pushString(it) }
+                    AppAccessibilityService.unlockedApps.keys.forEach { array.pushString(it) }
                     array
                 }())
             }
             
             Log.d("AppLockModule", "🐛 DEBUG - Locked Apps: $lockedApps")
-            Log.d("AppLockModule", "🐛 DEBUG - Temp Unlocked Apps: ${AppAccessibilityService.temporarilyUnlockedApps}")
-            Log.d("AppLockModule", "🐛 DEBUG - Permanent Unlocked Apps: ${AppAccessibilityService.permanentlyUnlockedApps}")
+            Log.d("AppLockModule", "🐛 DEBUG - Unlocked Apps: ${AppAccessibilityService.unlockedApps.keys}")
             
             promise.resolve(result)
         } catch (e: Exception) {
@@ -465,8 +436,14 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
             val lockedApps = prefs.getStringSet("lockedApps", setOf<String>()) ?: setOf<String>()
             
             if (lockedApps.contains(packageName)) {
-                Log.d("AppLockModule", "🚨 Force detected LOCKED app: $packageName")
-                sendAppLockedEvent(packageName, null)
+                // Check if app should be locked on open
+                val shouldLock = AppAccessibilityService.shouldLockAppOnOpen(packageName)
+                if (shouldLock) {
+                    Log.d("AppLockModule", "🚨 Force detected LOCKED app: $packageName")
+                    sendAppLockedEvent(packageName, null)
+                } else {
+                    Log.d("AppLockModule", "🔓 App is currently unlocked: $packageName")
+                }
             } else {
                 Log.d("AppLockModule", "✅ Force detected UNLOCKED app: $packageName")
             }
@@ -476,16 +453,15 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
     }
 
     @ReactMethod
-    fun clearTemporaryUnlocks() {
+    fun clearUnlockedApps() {
         try {
-            Log.d("AppLockModule", "🧹 Clearing all temporary unlocks")
+            Log.d("AppLockModule", "🧹 Clearing all unlocked apps")
             
-            AppAccessibilityService.temporarilyUnlockedApps.clear()
-            AppAccessibilityService.permanentlyUnlockedApps.clear()
+            AppAccessibilityService.unlockedApps.clear()
             
-            Log.d("AppLockModule", "✅ All temporary unlocks cleared")
+            Log.d("AppLockModule", "✅ All unlocked apps cleared")
         } catch (e: Exception) {
-            Log.e("AppLockModule", "❌ Error clearing temporary unlocks: ${e.message}")
+            Log.e("AppLockModule", "❌ Error clearing unlocked apps: ${e.message}")
         }
     }
 

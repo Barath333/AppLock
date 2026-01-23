@@ -7,6 +7,7 @@ import {
   DeviceEventEmitter,
   LogBox,
   NativeEventEmitter,
+  AppRegistry,
 } from 'react-native';
 import LockScreen from './LockScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -46,7 +47,6 @@ const LockScreenManager = ({
   const eventQueue = useRef([]);
   const isProcessingEvent = useRef(false);
   const lastEventTime = useRef(0);
-  const permanentlyUnlockedApps = useRef(new Set()); // Track permanently unlocked apps
 
   useEffect(() => {
     console.log('🔧 LockScreenManager mounted - isAppLockMode:', isAppLockMode);
@@ -66,6 +66,11 @@ const LockScreenManager = ({
       appStateSubscription.remove();
       backHandler.remove();
       if (unlockTimeoutRef.current) clearTimeout(unlockTimeoutRef.current);
+      
+      // Clear any session unlocks when component unmounts
+      if (AppLockModule && typeof AppLockModule.clearSessionUnlocks === 'function') {
+        AppLockModule.clearSessionUnlocks();
+      }
     };
   }, [isAppLockMode]);
 
@@ -126,8 +131,8 @@ const LockScreenManager = ({
       lastProcessedPackage.current = null;
       if (unlockTimeoutRef.current) clearTimeout(unlockTimeoutRef.current);
       
-      // Close all app sessions when our app goes to background
-      closeAllAppSessions();
+      // When our app goes to background, don't clear session unlocks
+      // They should persist across app switches
     } else if (nextAppState === 'active') {
       console.log('📱 App became active');
       checkAccessibilityService();
@@ -152,28 +157,6 @@ const LockScreenManager = ({
     return false;
   };
 
-  // NEW: Close all app sessions
-  const closeAllAppSessions = () => {
-    permanentlyUnlockedApps.current.forEach(packageName => {
-      if (AppLockModule && typeof AppLockModule.closeAppSession === 'function') {
-        AppLockModule.closeAppSession(packageName);
-      }
-    });
-    permanentlyUnlockedApps.current.clear();
-    console.log('🔚 Closed all app sessions');
-  };
-
-  // NEW: Check if app is permanently unlocked
-  const isAppPermanentlyUnlocked = (packageName) => {
-    return permanentlyUnlockedApps.current.has(packageName);
-  };
-
-  // NEW: Permanently unlock app (called AFTER successful PIN verification)
-  const permanentlyUnlockApp = (packageName) => {
-    permanentlyUnlockedApps.current.add(packageName);
-    console.log('🔓 PERMANENTLY unlocked app until closed:', packageName);
-  };
-
   const checkPendingLockedApp = async () => {
     try {
       console.log('🔍 Checking for pending locked app...');
@@ -196,12 +179,6 @@ const LockScreenManager = ({
 
   const handleLockedEvent = event => {
     console.log('🎯 Lock Event Received:', event.packageName);
-
-    // CRITICAL FIX: Check if app is permanently unlocked
-    if (isAppPermanentlyUnlocked(event.packageName)) {
-      console.log('⏭️ App is permanently unlocked, skipping lock event');
-      return;
-    }
 
     // CRITICAL FIX: Add event rate limiting to prevent loops
     const currentTime = Date.now();
@@ -271,14 +248,6 @@ const LockScreenManager = ({
       return;
     }
 
-    // CRITICAL FIX: Check if app is permanently unlocked
-    if (isAppPermanentlyUnlocked(packageName)) {
-      console.log('⏭️ App is permanently unlocked, skipping lock screen');
-      isProcessingEvent.current = false;
-      processNextQueuedEvent();
-      return;
-    }
-
     console.log('🚨 PROCESSING Lock Screen for:', packageName);
     isProcessingEvent.current = true;
     lastProcessedPackage.current = packageName;
@@ -343,9 +312,9 @@ const LockScreenManager = ({
       if (currentApp?.packageName) {
         console.log('🚀 Handling unlock for:', currentApp.packageName);
 
-        // CRITICAL FIX: Permanently unlock the app ONLY AFTER successful PIN verification
-        permanentlyUnlockApp(currentApp.packageName);
-
+        // CRITICAL FIX: Unlock app for current session (will persist until user switches away)
+        // This happens in the native module when launching the app
+        
         // Reset last processed package
         lastProcessedPackage.current = null;
 

@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import java.util.concurrent.ConcurrentHashMap
 
 class AppAccessibilityService : AccessibilityService() {
     private lateinit var prefs: SharedPreferences
@@ -22,10 +23,48 @@ class AppAccessibilityService : AccessibilityService() {
     private var isProcessingOwnApp = false
     private var ownAppLockScreenShown = false
     private var lastLockEventTime: Long = 0
+    
+    // Track user's current foreground app session
+    private var currentForegroundPackage: String? = null
+    private var currentForegroundClassName: String? = null
+    private var currentForegroundStartTime: Long = 0
 
     companion object {
-        val temporarilyUnlockedApps = mutableSetOf<String>()
-        val permanentlyUnlockedApps = mutableSetOf<String>() // Apps unlocked until closed
+        // Apps that are currently unlocked (until app is closed)
+        val unlockedApps = ConcurrentHashMap<String, Long>() // packageName -> unlock timestamp
+        
+        // Track apps that were recently foreground
+        private val recentForegroundApps = ConcurrentHashMap<String, Long>() // packageName -> last seen time
+        
+        // Lock to prevent concurrent modifications
+        val lock = Any()
+        
+        // Timeout for considering an app closed (5 seconds)
+        private const val APP_CLOSE_TIMEOUT = 5000L
+
+        // NEW: Companion object methods to access from AppLockModule
+        fun unlockApp(packageName: String) {
+            synchronized(lock) {
+                unlockedApps[packageName] = System.currentTimeMillis()
+                recentForegroundApps[packageName] = System.currentTimeMillis()
+                Log.d("AppLockDebug", "🔓 UNLOCKED app: $packageName (will lock when closed)")
+            }
+        }
+
+        fun forceLockApp(packageName: String) {
+            synchronized(lock) {
+                unlockedApps.remove(packageName)
+                recentForegroundApps.remove(packageName)
+                Log.d("AppLockDebug", "🔒 FORCE LOCKED app: $packageName")
+            }
+        }
+
+        fun shouldLockAppOnOpen(packageName: String): Boolean {
+            synchronized(lock) {
+                // If app is not in unlockedApps, it needs to be locked
+                return !unlockedApps.containsKey(packageName)
+            }
+        }
     }
 
     override fun onServiceConnected() {
@@ -35,6 +74,10 @@ class AppAccessibilityService : AccessibilityService() {
         
         val lockedApps = prefs.getStringSet("lockedApps", setOf()) ?: setOf()
         Log.d("AppLockDebug", "📋 Currently locked apps in service: $lockedApps")
+        
+        // Clear any stale state
+        unlockedApps.clear()
+        recentForegroundApps.clear()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -70,6 +113,9 @@ class AppAccessibilityService : AccessibilityService() {
         Log.d("AppLockDebug", "🏠 Window State Changed - Package: $packageName, Class: $className")
         
         if (packageName != null) {
+            // CRITICAL FIX: Track app lifecycle
+            trackAppLifecycle(packageName, className)
+            
             // CRITICAL FIX: Add cooldown period to prevent rapid repeated events
             val currentTime = System.currentTimeMillis()
             if (currentTime - lastLockEventTime < 1500) {
@@ -92,18 +138,14 @@ class AppAccessibilityService : AccessibilityService() {
             // Skip system/launcher apps
             if (isSystemApp(packageName)) {
                 Log.d("AppLockDebug", "⏭️ Skipping system app: $packageName")
+                // If switching from unlocked app to system app, check if unlocked app was closed
+                checkIfUnlockedAppWasClosed(packageName)
                 return
             }
             
-            // Check if this app is permanently unlocked (until app is closed)
-            if (isAppPermanentlyUnlocked(packageName)) {
-                Log.d("AppLockDebug", "🔓 App is permanently unlocked until closed: $packageName")
-                return
-            }
-            
-            // Check if this app is temporarily unlocked
-            if (isAppTemporarilyUnlocked(packageName)) {
-                Log.d("AppLockDebug", "🔓 App is temporarily unlocked: $packageName")
+            // Check if this app is currently unlocked
+            if (isAppCurrentlyUnlocked(packageName)) {
+                Log.d("AppLockDebug", "🔓 App is currently unlocked: $packageName")
                 return
             }
             
@@ -138,40 +180,84 @@ class AppAccessibilityService : AccessibilityService() {
         }
     }
 
-    // NEW METHOD: Check if user is currently interacting with the app
-    private fun isUserCurrentlyInteractingWithApp(packageName: String): Boolean {
-        // This is now handled by permanent unlock mechanism
-        return false
-    }
-
-    // NEW METHOD: Mark app as permanently unlocked (until app is closed)
-    private fun isAppPermanentlyUnlocked(packageName: String): Boolean {
-        return permanentlyUnlockedApps.contains(packageName)
-    }
-
-    // NEW METHOD: Permanently unlock app until it's closed
-    fun permanentlyUnlockApp(packageName: String) {
-        permanentlyUnlockedApps.add(packageName)
-        Log.d("AppLockDebug", "🔓 PERMANENTLY unlocked app until closed: $packageName")
+    // NEW METHOD: Track app lifecycle to detect when apps are closed
+    private fun trackAppLifecycle(newPackageName: String, newClassName: String?) {
+        val currentTime = System.currentTimeMillis()
         
-        // Remove from temporary unlocks if present
-        temporarilyUnlockedApps.remove(packageName)
-    }
-
-    // NEW METHOD: Close app session (when app is no longer in foreground)
-    fun closeAppSession(packageName: String) {
-        permanentlyUnlockedApps.remove(packageName)
-        Log.d("AppLockDebug", "🔚 Closed app session for: $packageName")
-    }
-
-    private fun isAppTemporarilyUnlocked(packageName: String): Boolean {
-        // Check in-memory temporary unlocks
-        if (temporarilyUnlockedApps.contains(packageName)) {
-            Log.d("AppLockDebug", "🔓 App $packageName is temporarily unlocked in memory")
-            return true
+        synchronized(lock) {
+            // Update recent foreground apps
+            recentForegroundApps[newPackageName] = currentTime
+            
+            // Check if this is a new app (user switched to different app)
+            if (currentForegroundPackage != newPackageName) {
+                val previousPackage = currentForegroundPackage
+                currentForegroundPackage = newPackageName
+                currentForegroundClassName = newClassName
+                currentForegroundStartTime = currentTime
+                
+                if (previousPackage != null) {
+                    Log.d("AppLockDebug", "🔄 User switched from $previousPackage to $newPackageName")
+                    
+                    // Check if previous app was unlocked and might be closed
+                    if (isAppCurrentlyUnlocked(previousPackage)) {
+                        Log.d("AppLockDebug", "📱 Previous unlocked app ($previousPackage) is now in background")
+                        // Don't remove from unlocked yet - wait to see if it's actually closed
+                    }
+                }
+            } else {
+                // Same app, just different activity - update timestamp
+                Log.d("AppLockDebug", "📱 User still in same app: $newPackageName")
+            }
+            
+            // Clean up old entries from recentForegroundApps
+            val iterator = recentForegroundApps.entries.iterator()
+            while (iterator.hasNext()) {
+                val entry = iterator.next()
+                if (currentTime - entry.value > APP_CLOSE_TIMEOUT * 2) {
+                    iterator.remove()
+                }
+            }
+            
+            // Check if any unlocked apps haven't been seen recently (they're closed)
+            checkForClosedApps(currentTime)
         }
-        
-        return false
+    }
+
+    // NEW METHOD: Check if unlocked apps have been closed
+    private fun checkForClosedApps(currentTime: Long) {
+        val iterator = unlockedApps.entries.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            val packageName = entry.key
+            
+            // If app hasn't been in foreground recently AND it's not the current foreground app
+            val lastSeen = recentForegroundApps[packageName]
+            if (lastSeen == null || currentTime - lastSeen > APP_CLOSE_TIMEOUT) {
+                if (packageName != currentForegroundPackage) {
+                    Log.d("AppLockDebug", "🚪 App $packageName appears to be CLOSED (not seen in ${APP_CLOSE_TIMEOUT}ms)")
+                    iterator.remove()
+                    
+                    // Also remove from recent foreground tracking
+                    recentForegroundApps.remove(packageName)
+                }
+            }
+        }
+    }
+
+    // NEW METHOD: Check if switching to system app means unlocked app was closed
+    private fun checkIfUnlockedAppWasClosed(systemPackageName: String) {
+        // If switching to system app (home/launcher), check all unlocked apps
+        if (isSystemApp(systemPackageName)) {
+            val currentTime = System.currentTimeMillis()
+            checkForClosedApps(currentTime)
+        }
+    }
+
+    // NEW METHOD: Check if app is currently unlocked
+    private fun isAppCurrentlyUnlocked(packageName: String): Boolean {
+        synchronized(lock) {
+            return unlockedApps.containsKey(packageName)
+        }
     }
 
     private fun isSystemApp(packageName: String): Boolean {
@@ -186,7 +272,9 @@ class AppAccessibilityService : AccessibilityService() {
                packageName.startsWith("com.sec.") ||
                packageName.startsWith("com.google.android.") ||
                packageName == "com.android.settings" ||
-               packageName == "com.android.systemui")
+               packageName == "com.android.systemui" ||
+               packageName == "com.sec.android.app.launcher" ||
+               packageName == "com.google.android.apps.nexuslauncher")
     }
 
     private fun showLockScreen(packageName: String, className: String?) {
@@ -238,6 +326,8 @@ class AppAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacksAndMessages(null)
+        unlockedApps.clear()
+        recentForegroundApps.clear()
         Log.d("AppLockDebug", "🔴 Accessibility Service Destroyed")
     }
 }
