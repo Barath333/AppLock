@@ -23,10 +23,12 @@
     "warning": "Warning",
     "note": "Note"
   },
+
   "splash": {
     "title": "App Lock",
     "subtitle": "Secure Your Privacy"
   },
+
   "home": {
     "title": "App Lock",
     "search_placeholder": "Search apps",
@@ -48,7 +50,7 @@
     "all_apps_locked": "All apps have been locked",
     "all_apps_unlocked": "All apps have been unlocked",
     "initial_setup_message": "Default security setup complete. Your AppLock is now protecting your apps.",
-      "security_recommendation": "Security Recommendation",
+    "security_recommendation": "Security Recommendation",
     "security_recommendation_desc": "Lock the App Lock application itself for maximum security. Otherwise, anyone can access and modify your lock settings.",
     "security_enabled_message": "App Lock is now protected. You will need to enter your PIN to access it.",
     "quick_actions": "Quick Actions",
@@ -57,8 +59,13 @@
     "no_search_results": "No apps match your search. Try different keywords.",
     "no_apps_available": "No apps available. Please check if app permissions are granted.",
     "clear_search": "Clear Search",
-    "this_app": "This App"
+    "this_app": "This App",
+
+    "security_question_required": "Security Question Required",
+    "security_question_mandatory_desc": "You need to set up a security question before using the app. This will be used if you forget your PIN.",
+    "set_security_question": "Set Security Question"
   },
+
   "setup": {
     "title": "Set Up Your Security",
     "subtitle": "Create a secure PIN to protect your applications",
@@ -74,6 +81,7 @@
     "weak_pin": "Weak PIN",
     "pins_not_match": "PINs do not match"
   },
+
   "permissions": {
     "title": "App Lock",
     "subtitle": "We need some permissions to protect your apps",
@@ -93,6 +101,7 @@
     "accessibility_description": "Please enable the accessibility service for App Lock in Settings > Accessibility to lock apps properly.",
     "open_settings": "Open Settings"
   },
+
   "lock_screen": {
     "app_locked": "is locked",
     "enter_pin": "Enter your PIN to unlock",
@@ -103,6 +112,7 @@
     "too_many_attempts": "Too many failed attempts. Try again in {{minutes}} minutes",
     "minutes": "minutes"
   },
+
   "settings": {
     "title": "Settings",
     "security": "Security",
@@ -127,14 +137,18 @@
     "change_password_desc": "Update your security PIN",
     "security_question_desc": "Set up PIN recovery question",
     "security_auth": "Security & Authentication",
-    "biometric_desc": "Use fingerprint or face to unlock apps",
+
+    "biometric_desc": "Use fingerprint or face ID to unlock the app",
+    "biometric_not_supported": "Biometric authentication is not supported on this device",
+    "biometric_available": "Available",
     "biometrics_not_available": "Biometric authentication is not available on this device",
-    "biometric_prompt": "Authenticate to enable biometrics",
+    "biometrics_not_setup": "Biometric authentication is not set up on your device. Please set it up in your device settings.",
     "biometrics_enabled": "Biometric authentication enabled",
-    "biometrics_failed": "Biometric authentication failed",
-    "biometrics_error": "Failed to enable biometric authentication",
-    "biometrics_disabled": "Biometrics Disabled",
-    "biometrics_disabled_message": "Biometric authentication has been disabled",
+    "biometrics_disabled": "Biometric authentication disabled",
+    "biometrics_disabled_message": "You can re-enable biometric authentication anytime",
+    "biometrics_failed": "Biometric authentication failed. Please try again.",
+    "biometrics_error": "An error occurred while setting up biometric authentication",
+    "not_supported": "Not Supported",
     "permissions": "Permissions",
     "accessibility_service": "Accessibility Service",
     "accessibility_service_desc": "Required for detecting app launches",
@@ -172,6 +186,7 @@
     "biometric_module_unavailable": "Biometric module not available. Please reinstall the app.",
     "module_unavailable": "Module unavailable"
   },
+
   "change_password": {
     "title": "Change Master PIN",
     "subtitle": "Update your security PIN to keep your apps protected",
@@ -182,9 +197,17 @@
     "pin_changed": "PIN has been changed successfully",
     "tip_6": "Change your PIN regularly"
   },
+
   "security_question": {
     "title": "Security Question",
     "subtitle": "Set up a security question to recover your PIN if you forget it",
+
+    "mandatory_title": "Required Setup",
+    "mandatory_setup_title": "Set Security Question",
+    "mandatory_subtitle": "You must set a security question to use the app. This will help you reset your PIN if you forget it.",
+    "exit_title": "Exit Setup",
+    "exit_message": "You must set a security question to use the app. Are you sure you want to exit?",
+
     "select_question": "Select a Security Question",
     "custom_question": "Custom question (enter below)",
     "your_answer": "Your Answer",
@@ -207,6 +230,7 @@
     "clear_button": "Clear",
     "clear_success": "Security question has been cleared"
   },
+
   "forgot_pin": {
     "title": "Forgot PIN",
     "subtitle": "Answer your security question to reset your PIN",
@@ -218,32 +242,49 @@
     "reset_note": "Resetting your PIN will unlock all currently locked apps for security reasons.",
     "no_question_set": "Security question not set up. Please set it up in Settings.",
     "reset_warning": "This will reset your PIN and unlock all apps. You will need to set up a new PIN.",
-    "reset_success": "PIN has been reset. All apps are now unlocked."
+    "reset_success": "PIN has been reset. All apps are now unlocked.",
+
+    "reset_password": "Reset Password",
+    "security_question_required": "Answer your security question to reset PIN",
+    "set_new_pin": "Set New PIN",
+    "enter_new_pin": "Enter your new PIN",
+    "verify_answer": "Verify Answer",
+    "set_pin": "Set PIN",
+    "your_security_question": "Your Security Question",
+    "enter_your_answer": "Enter your answer",
+    "answer_placeholder": "Type your answer here",
+    "verify_and_continue": "Verify & Continue",
+    "set_security_question": "Set Security Question",
+    "new_pin_instruction": "Enter a new 4-6 digit PIN",
+    "reset_via_security_question": "You can reset your PIN by answering your security question.",
+    "no_security_question": "No security question set. You'll need to reset the app.",
+    "no_security_question_set": "No security question set. Please set one first."
   },
- "about": {
-  "title": "App Lock",
-  "version": "Version 1.0.0",
-  "description": "Secure your privacy by locking apps with a PIN code. App Lock provides comprehensive protection for your personal applications and data.",
-  "information": "Information",
-  "contact_support": "Contact Support",
-  "contact_support_desc": "Get help or report an issue via email.",
-  "privacy_policy": "Privacy Policy",
-  "privacy_policy_desc": "Learn how we protect and handle your personal information.",
-  "terms_service": "Terms of Service",
-  "terms_service_desc": "Read the terms and conditions for using App Lock.",
-  "features": "Features",
-  "app_locking": "App Locking",
-  "app_locking_desc": "Lock any app with PIN protection",
-  "biometric_auth": "Biometric Auth",
-  "biometric_auth_desc": "Unlock with fingerprint or face ID",
-  "security_question_feature": "Security Question",
-  "security_question_desc": "Recover PIN if forgotten",
-  "master_pin_change": "Master PIN Change",
-  "master_pin_change_desc": "Update your security PIN anytime",
-  "footer": "© 2025 App Lock. All rights reserved.",
-  "footer_subtext": "Protect your privacy, one app at a time."
-}
-,
+
+  "about": {
+    "title": "App Lock",
+    "version": "Version 1.0.0",
+    "description": "Secure your privacy by locking apps with a PIN code. App Lock provides comprehensive protection for your personal applications and data.",
+    "information": "Information",
+    "contact_support": "Contact Support",
+    "contact_support_desc": "Get help or report an issue via email.",
+    "privacy_policy": "Privacy Policy",
+    "privacy_policy_desc": "Learn how we protect and handle your personal information.",
+    "terms_service": "Terms of Service",
+    "terms_service_desc": "Read the terms and conditions for using App Lock.",
+    "features": "Features",
+    "app_locking": "App Locking",
+    "app_locking_desc": "Lock any app with PIN protection",
+    "biometric_auth": "Biometric Auth",
+    "biometric_auth_desc": "Unlock with fingerprint or face ID",
+    "security_question_feature": "Security Question",
+    "security_question_desc": "Recover PIN if forgotten",
+    "master_pin_change": "Master PIN Change",
+    "master_pin_change_desc": "Update your security PIN anytime",
+    "footer": "© 2025 App Lock. All rights reserved.",
+    "footer_subtext": "Protect your privacy, one app at a time."
+  },
+
   "language": {
     "title": "Select Language",
     "subtitle": "Choose your preferred language",
@@ -252,6 +293,7 @@
     "welcome_title": "Welcome to AppLock",
     "welcome_subtitle": "Choose your preferred language to get started"
   },
+
   "errors": {
     "pin_too_short": "PIN must be at least 4 digits",
     "pins_not_match": "PINs do not match",
@@ -272,8 +314,16 @@
     "setting_update_failed": "Failed to update setting",
     "test_failed": "Test failed",
     "reset_failed_data": "Failed to reset data",
-    "operation_failed": "Operation failed. Please try again."
+    "operation_failed": "Operation failed. Please try again.",
+
+    "enter_security_answer": "Please enter your security answer",
+    "security_question_not_set": "Security question not set",
+    "incorrect_security_answer": "Incorrect security answer",
+    "verification_failed": "Failed to verify answer",
+    "reset_pin_failed": "Failed to reset PIN",
+    "load_security_question_failed": "Failed to load security question"
   },
+
   "alerts": {
     "success": "Success",
     "error": "Error",
@@ -289,6 +339,7 @@
     "lock_all_apps": "Lock All Apps",
     "unlock_all_apps": "Unlock All Apps"
   },
+
   "drawer": {
     "home": "Home",
     "settings": "Settings",

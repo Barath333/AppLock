@@ -193,46 +193,15 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
     }
   };
 
-  const handleForgotPin = async () => {
-    try {
-      const securityQuestion = await AsyncStorage.getItem('security_question');
-      const securityAnswer = await AsyncStorage.getItem('security_answer');
-      if (securityQuestion && securityAnswer) {
-        console.log('🔄 Calling onForgotPin prop - Security Q&A exists');
-        if (onForgotPin) onForgotPin();
-        if (onClose) onClose();
-      } else {
-        console.log('🔄 No security Q&A - showing reset confirmation');
-        showAlert(
-          t('alerts.reset_pin'),
-          t('forgot_pin.reset_warning'),
-          'warning',
-          [
-            {text: t('common.cancel'), style: 'cancel'},
-            {
-              text: t('alerts.reset'),
-              onPress: async () => {
-                try {
-                  console.log('🔄 User confirmed reset - calling onForgotPin');
-                  if (onForgotPin) onForgotPin();
-                } catch (error) {
-                  console.error('Error in reset confirmation:', error);
-                  showAlert(
-                    t('alerts.error'),
-                    t('errors.reset_failed'),
-                    'error',
-                  );
-                }
-              },
-              style: 'destructive',
-            },
-          ],
-        );
-      }
-    } catch (error) {
-      console.error('Error checking security question:', error);
-    }
-  };
+
+const handleForgotPin = async () => {
+  console.log('🔓 Forgot PIN clicked in LockScreen');
+  
+  // Simply call the onForgotPin prop - let parent handle navigation
+  if (onForgotPin) {
+    onForgotPin();
+  }
+};
 
   useEffect(() => {
     const backHandler = BackHandler.addEventListener(

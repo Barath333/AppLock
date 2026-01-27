@@ -1,3 +1,4 @@
+// LockScreenManager.js
 import React, {useState, useEffect, useRef} from 'react';
 import {
   View,
@@ -7,11 +8,9 @@ import {
   DeviceEventEmitter,
   LogBox,
   NativeEventEmitter,
-  AppRegistry,
 } from 'react-native';
 import LockScreen from './LockScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Keychain from 'react-native-keychain';
 import {useTranslation} from 'react-i18next';
 import {useAlert} from '../contexts/AlertContext';
 
@@ -385,43 +384,28 @@ const LockScreenManager = ({
     }
   };
 
+  // UPDATED: Simplified handleForgotPin - always use the callback
   const handleForgotPin = async () => {
+    console.log('🔓 Forgot PIN clicked');
+    
     try {
       const securityQuestion = await AsyncStorage.getItem('security_question');
-      const securityAnswer = await AsyncStorage.getItem('security_answer');
-
-      if (securityQuestion && securityAnswer) {
-        closeLockScreen();
-        if (onForgotPin) onForgotPin();
-      } else {
-        showAlert(
-          t('alerts.reset_pin'),
-          t('forgot_pin.reset_warning'),
-          'warning',
-          [
-            {text: t('common.cancel'), style: 'cancel'},
-            {
-              text: t('alerts.reset'),
-              onPress: async () => {
-                try {
-                  closeLockScreen();
-                  if (onForgotPin) onForgotPin();
-                } catch (error) {
-                  console.error('Error in reset confirmation:', error);
-                  showAlert(
-                    t('alerts.error'),
-                    t('errors.reset_failed'),
-                    'error',
-                  );
-                }
-              },
-              style: 'destructive',
-            },
-          ],
-        );
+      console.log('🔍 Security question exists:', !!securityQuestion);
+      
+      // Close lock screen first
+      closeLockScreen();
+      
+      // Always call parent's handler
+      if (onForgotPin) {
+        console.log('🔄 Calling onForgotPin callback');
+        // Small delay to ensure lock screen is fully closed
+        setTimeout(() => {
+          onForgotPin();
+        }, 300);
       }
     } catch (error) {
-      console.error('Error checking security question:', error);
+      console.error('❌ Error in handleForgotPin:', error);
+      closeLockScreen();
     }
   };
 

@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef} from 'react';
+import React, {useState, useEffect, useRef, useCallback} from 'react';
 import {
   StyleSheet,
   StatusBar,
@@ -166,12 +166,28 @@ export default function App() {
     }
   };
 
-  const handleForgotPin = () => {
-    console.log('🔄 Handling forgot PIN');
+// In App.js, update handleForgotPin to ensure navigation
+const handleForgotPin = useCallback(() => {
+  console.log('🔄 Handling forgot PIN from lock screen');
+  console.log('🔒 isLockScreenMode:', isLockScreenMode);
+  
+  // If we're in lock screen mode, exit it first
+  if (isLockScreenMode) {
+    console.log('🔓 Exiting lock screen mode');
+    setIsLockScreenMode(false);
+    setPendingLockedApp(null);
+  }
+  
+  // Then navigate to reset screen
+  setTimeout(() => {
     if (navigationRef.current) {
-      navigationRef.current.navigate('ForgotPin');
+      console.log('🚀 Navigating to ForgotPinReset');
+      navigationRef.current.navigate('ForgotPinReset');
+    } else {
+      console.log('❌ navigationRef.current is null');
     }
-  };
+  }, 500);
+}, [isLockScreenMode]);
 
   const handleSetupComplete = () => {
     console.log('✅ Setup completed');
@@ -211,52 +227,60 @@ export default function App() {
     }
   };
 
-  const checkLockScreenMode = async () => {
-    try {
-      console.log('🔍 Checking if app started in lock screen mode...');
+ // In App.js, update the checkLockScreenMode function
+const checkLockScreenMode = async () => {
+  try {
+    console.log('🔍 Checking if app started in lock screen mode...');
 
-      // First check for pending locked app from accessibility service
-      if (
-        AppLockModule &&
-        typeof AppLockModule.getPendingLockedApp === 'function'
-      ) {
-        const pendingApp = await AppLockModule.getPendingLockedApp();
-        console.log('📦 Pending locked app from service:', pendingApp);
+    // First check for pending locked app from accessibility service
+    if (
+      AppLockModule &&
+      typeof AppLockModule.getPendingLockedApp === 'function'
+    ) {
+      const pendingApp = await AppLockModule.getPendingLockedApp();
+      console.log('📦 Pending locked app from service:', pendingApp);
 
-        if (pendingApp && pendingApp.packageName) {
-          console.log(
-            '🚨 App started in lock screen mode for:',
-            pendingApp.packageName,
-          );
-          setIsLockScreenMode(true);
-          setPendingLockedApp(pendingApp);
-          setIsSplashVisible(false);
-          return;
-        }
-      }
-
-      // CRITICAL FIX: If no pending app but App Lock is locked, force lock screen
-      await checkIfAppLockIsLocked();
-
-      // If we're already in lock screen mode from the check above, return
-      if (isLockScreenMode && pendingLockedApp) {
+      if (pendingApp && pendingApp.packageName) {
+        console.log(
+          '🚨 App started in lock screen mode for:',
+          pendingApp.packageName,
+        );
+        setIsLockScreenMode(true);
+        setPendingLockedApp(pendingApp);
+        setIsSplashVisible(false);
         return;
       }
-
-      console.log('📭 App started in normal mode');
-      // Only show splash if not in lock screen mode
-      if (!isLockScreenMode) {
-        const timer = setTimeout(() => setIsSplashVisible(false), 2000);
-        return () => clearTimeout(timer);
-      }
-    } catch (error) {
-      console.error('❌ Error checking lock screen mode:', error);
-      if (!isLockScreenMode) {
-        const timer = setTimeout(() => setIsSplashVisible(false), 2000);
-        return () => clearTimeout(timer);
-      }
     }
-  };
+
+    // CRITICAL FIX: If no pending app but App Lock is locked, force lock screen
+    await checkIfAppLockIsLocked();
+
+    // If we're already in lock screen mode from the check above, return
+    if (isLockScreenMode && pendingLockedApp) {
+      return;
+    }
+
+    console.log('📭 App started in normal mode');
+    
+    // Only show splash on initial load, not when returning from lock screen
+    // Add a check to prevent multiple splash screens
+    const hasShownSplash = await AsyncStorage.getItem('hasShownSplash');
+    if (!hasShownSplash && !isLockScreenMode) {
+      await AsyncStorage.setItem('hasShownSplash', 'true');
+      const timer = setTimeout(() => {
+        console.log('⏰ Hiding splash screen');
+        setIsSplashVisible(false);
+      }, 2000);
+      return () => clearTimeout(timer);
+    } else {
+      setIsSplashVisible(false);
+    }
+  } catch (error) {
+    console.error('❌ Error checking lock screen mode:', error);
+    // Don't show splash on error
+    setIsSplashVisible(false);
+  }
+};
 
   const handleSplashComplete = () => {
     console.log('✅ Splash screen animation completed');

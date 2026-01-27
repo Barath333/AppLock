@@ -20,6 +20,7 @@ import {DrawerContentScrollView, DrawerItem} from '@react-navigation/drawer';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import {useTranslation} from 'react-i18next';
+import ForgotPinResetScreen from '../screens/ForgotPinResetScreen';
 
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -292,25 +293,33 @@ function AppNavigator({isSetupCompleted, onSetupComplete}) {
     }
   };
 
-  const checkSetupStatus = async () => {
-    try {
-      console.log('🔍 Checking setup status locally...');
+// AppNavigator.js - Update the checkSetupStatus function
 
-      const setupCompleted = await AsyncStorage.getItem('setupCompleted');
-      const hasPIN = await checkIfPINExists();
+const checkSetupStatus = async () => {
+  try {
+    console.log('🔍 Checking setup status locally...');
 
-      console.log('📋 Local Setup Status:', {setupCompleted, hasPIN});
+    const setupCompleted = await AsyncStorage.getItem('setupCompleted');
+    const hasPIN = await checkIfPINExists();
+    const hasSecurityQuestion = await AsyncStorage.getItem('security_question');
 
-      if (setupCompleted === 'true' && hasPIN) {
-        await determineInitialRoute(true);
-      } else {
-        await determineInitialRoute(false);
+    console.log('📋 Local Setup Status:', {setupCompleted, hasPIN, hasSecurityQuestion});
+
+    if (setupCompleted === 'true' && hasPIN) {
+      // Check if security question is set
+      if (!hasSecurityQuestion) {
+        console.log('⚠️ Setup completed but security question not set');
+        // We'll handle this in HomeScreen
       }
-    } catch (error) {
-      console.error('❌ Error checking setup status:', error);
+      await determineInitialRoute(true);
+    } else {
       await determineInitialRoute(false);
     }
-  };
+  } catch (error) {
+    console.error('❌ Error checking setup status:', error);
+    await determineInitialRoute(false);
+  }
+};
 
   const handleSetupComplete = () => {
     console.log('✅ Setup completed in AppNavigator');
@@ -420,6 +429,16 @@ function AppNavigator({isSetupCompleted, onSetupComplete}) {
           presentation: 'modal',
         }}
       />
+     <Stack.Screen
+  name="ForgotPinReset"
+  component={ForgotPinResetScreen}
+  options={{
+    headerShown: true,
+    title: 'Reset PIN',
+    animationEnabled: true,
+    presentation: 'modal',
+  }}
+/>
     </Stack.Navigator>
   );
 }

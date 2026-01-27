@@ -25,6 +25,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useAlert} from '../contexts/AlertContext';
 import {RefreshControl, ScrollView} from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import {Modal, TouchableWithoutFeedback, Keyboard} from 'react-native';
 
 const {AppListModule, AppLockModule} = NativeModules;
 const {width} = Dimensions.get('window');
@@ -44,15 +45,43 @@ const HomeScreen = () => {
   const [scaleAnim] = useState(new Animated.Value(1));
   const [autoLockNewApps, setAutoLockNewApps] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showSecurityQuestionModal, setShowSecurityQuestionModal] = useState(false);
+const [hasCheckedSecurityQuestion, setHasCheckedSecurityQuestion] = useState(false);
 
-  useFocusEffect(
-    React.useCallback(() => {
-      console.log('🏠 HomeScreen focused - refreshing data');
-      loadSettings();
-      loadLockedApps();
-      loadInstalledApps();
-    }, []),
-  );
+
+useFocusEffect(
+  React.useCallback(() => {
+    console.log('🏠 HomeScreen focused - refreshing data');
+    loadSettings();
+    loadLockedApps();
+    loadInstalledApps();
+    checkSecurityQuestion();
+    return () => {};
+  }, []),
+);
+
+
+const checkSecurityQuestion = async () => {
+  try {
+    if (hasCheckedSecurityQuestion) return;
+    
+    const securityQuestion = await AsyncStorage.getItem('security_question');
+    const securityAnswer = await AsyncStorage.getItem('security_answer');
+    
+    if (!securityQuestion || !securityAnswer) {
+      console.log('⚠️ Security question not set - showing mandatory modal');
+      // Show modal after a short delay to ensure everything is loaded
+      setTimeout(() => {
+        setShowSecurityQuestionModal(true);
+      }, 500);
+    }
+    setHasCheckedSecurityQuestion(true);
+  } catch (error) {
+    console.error('Error checking security question:', error);
+  }
+};
+
+ 
 
   useEffect(() => {
     console.log('🏠 HomeScreen mounted');
@@ -617,6 +646,43 @@ const HomeScreen = () => {
             )}
           </Card.Content>
         </Card>
+        <Modal
+  visible={showSecurityQuestionModal}
+  animationType="slide"
+  transparent={true}
+  onRequestClose={() => {}} // Prevent closing by back button
+>
+  <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+    <View style={styles.modalOverlay}>
+      <View style={styles.modalContent}>
+        <View style={styles.modalHeader}>
+          <Icon name="shield-alert" size={32} color="#1E88E5" />
+          <Text style={styles.modalTitle}>
+            {t('home.security_question_required')}
+          </Text>
+        </View>
+        
+        <Text style={styles.modalDescription}>
+          {t('home.security_question_mandatory_desc')}
+        </Text>
+        
+        <View style={styles.modalButtons}>
+          <Button
+            mode="contained"
+            onPress={() => {
+              setShowSecurityQuestionModal(false);
+              navigation.navigate('SecurityQuestion', { mandatory: true });
+            }}
+            style={styles.modalButton}
+            contentStyle={styles.modalButtonContent}
+          >
+            {t('home.set_security_question')}
+          </Button>
+        </View>
+      </View>
+    </View>
+  </TouchableWithoutFeedback>
+</Modal>
       </ScrollView>
     </View>
   );
@@ -959,6 +1025,57 @@ const styles = StyleSheet.create({
     color: '#777',
     fontWeight: '500',
   },
+  // Add to HomeScreen.js styles
+modalOverlay: {
+  flex: 1,
+  backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  justifyContent: 'center',
+  alignItems: 'center',
+  padding: 20,
+},
+modalContent: {
+  backgroundColor: 'white',
+  borderRadius: 16,
+  padding: 24,
+  width: '100%',
+  maxWidth: 400,
+  elevation: 5,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.25,
+  shadowRadius: 8,
+},
+modalHeader: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  marginBottom: 16,
+  justifyContent: 'center',
+},
+modalTitle: {
+  fontSize: 20,
+  fontWeight: 'bold',
+  color: '#1E88E5',
+  marginLeft: 12,
+},
+modalDescription: {
+  fontSize: 16,
+  color: '#666',
+  textAlign: 'center',
+  marginBottom: 24,
+  lineHeight: 22,
+},
+modalButtons: {
+  flexDirection: 'row',
+  justifyContent: 'center',
+},
+modalButton: {
+  borderRadius: 8,
+  backgroundColor: '#1E88E5',
+  minWidth: 200,
+},
+modalButtonContent: {
+  paddingVertical: 8,
+},
 });
 
 export default HomeScreen;

@@ -1,21 +1,43 @@
-import React, {useState, useEffect} from 'react';
-import {View, Text, StyleSheet, ScrollView} from 'react-native';
-import {TextInput, Button, Card, RadioButton} from 'react-native-paper';
-import {useNavigation} from '@react-navigation/native';
+// SecurityQuestionScreen.js - Complete updated file
+import React, {useState, useEffect, useRef} from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  BackHandler,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import {
+  TextInput,
+  Button,
+  Card,
+  RadioButton,
+  Portal,
+  Dialog,
+} from 'react-native-paper';
+import {useNavigation, useRoute} from '@react-navigation/native';
 import {useTranslation} from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useAlert} from '../contexts/AlertContext';
-import CustomKeyboardAvoidingView from '../components/KeyboardAvoidingView';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const SecurityQuestionScreen = () => {
   const navigation = useNavigation();
+  const route = useRoute();
   const {t} = useTranslation();
   const {showAlert} = useAlert();
+  
   const [selectedQuestion, setSelectedQuestion] = useState('');
   const [customQuestion, setCustomQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [existingQuestion, setExistingQuestion] = useState(null);
+  const [showExitDialog, setShowExitDialog] = useState(false);
+  
+  const isMandatory = route.params?.mandatory || false;
+  const backHandlerRef = useRef(null);
 
   const securityQuestions = [
     t('security_question.pet_name'),
@@ -29,7 +51,24 @@ const SecurityQuestionScreen = () => {
 
   useEffect(() => {
     loadExistingQuestion();
-  }, []);
+    
+    // Handle back button for mandatory mode
+    if (isMandatory) {
+      backHandlerRef.current = BackHandler.addEventListener(
+        'hardwareBackPress',
+        () => {
+          setShowExitDialog(true);
+          return true;
+        }
+      );
+    }
+
+    return () => {
+      if (backHandlerRef.current) {
+        backHandlerRef.current.remove();
+      }
+    };
+  }, [isMandatory]);
 
   const loadExistingQuestion = async () => {
     try {
@@ -93,7 +132,14 @@ const SecurityQuestionScreen = () => {
         [
           {
             text: t('common.ok'),
-            onPress: () => navigation.goBack(),
+            onPress: () => {
+              if (isMandatory) {
+                // If mandatory mode, go back to home screen
+                navigation.goBack();
+              } else {
+                navigation.goBack();
+              }
+            },
           },
         ],
       );
@@ -142,82 +188,129 @@ const SecurityQuestionScreen = () => {
   };
 
   return (
-    <CustomKeyboardAvoidingView style={styles.container}>
-      <Card style={styles.card}>
-        <Card.Content>
-          <Text style={styles.title}>{t('security_question.title')}</Text>
-          <Text style={styles.subtitle}>{t('security_question.subtitle')}</Text>
-
-          {existingQuestion && (
-            <View style={styles.existingContainer}>
-              <Text style={styles.existingTitle}>
-                {t('security_question.current_question')}
-              </Text>
-              <Text style={styles.existingQuestion}>
-                {existingQuestion.question}
-              </Text>
-            </View>
-          )}
-
-          <Text style={styles.sectionTitle}>
-            {t('security_question.select_question')}
-          </Text>
-
-          <RadioButton.Group
-            onValueChange={setSelectedQuestion}
-            value={selectedQuestion}>
-            {securityQuestions.map((question, index) => (
-              <View key={index} style={styles.radioContainer}>
-                <RadioButton value={question} color="#1E88E5" />
-                <Text style={styles.radioLabel}>{question}</Text>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <Card style={styles.card}>
+          <Card.Content>
+            {isMandatory && (
+              <View style={styles.mandatoryHeader}>
+                <Icon name="shield-alert" size={24} color="#1E88E5" />
+                <Text style={styles.mandatoryText}>
+                  {t('security_question.mandatory_title')}
+                </Text>
               </View>
-            ))}
-          </RadioButton.Group>
+            )}
 
-          {selectedQuestion === t('security_question.custom_question') && (
+            <Text style={styles.title}>
+              {isMandatory 
+                ? t('security_question.mandatory_setup_title')
+                : t('security_question.title')}
+            </Text>
+            
+            <Text style={styles.subtitle}>
+              {isMandatory
+                ? t('security_question.mandatory_subtitle')
+                : t('security_question.subtitle')}
+            </Text>
+
+            {existingQuestion && (
+              <View style={styles.existingContainer}>
+                <Text style={styles.existingTitle}>
+                  {t('security_question.current_question')}
+                </Text>
+                <Text style={styles.existingQuestion}>
+                  {existingQuestion.question}
+                </Text>
+              </View>
+            )}
+
+            <Text style={styles.sectionTitle}>
+              {t('security_question.select_question')}
+            </Text>
+
+            <RadioButton.Group
+              onValueChange={setSelectedQuestion}
+              value={selectedQuestion}>
+              {securityQuestions.map((question, index) => (
+                <View key={index} style={styles.radioContainer}>
+                  <RadioButton value={question} color="#1E88E5" />
+                  <Text style={styles.radioLabel}>{question}</Text>
+                </View>
+              ))}
+            </RadioButton.Group>
+
+            {selectedQuestion === t('security_question.custom_question') && (
+              <TextInput
+                label={t('security_question.custom_label')}
+                value={customQuestion}
+                onChangeText={setCustomQuestion}
+                style={styles.input}
+                mode="outlined"
+                placeholder={t('security_question.custom_placeholder')}
+              />
+            )}
+
             <TextInput
-              label={t('security_question.custom_label')}
-              value={customQuestion}
-              onChangeText={setCustomQuestion}
+              label={t('security_question.your_answer')}
+              value={answer}
+              onChangeText={setAnswer}
               style={styles.input}
               mode="outlined"
-              placeholder={t('security_question.custom_placeholder')}
+              placeholder={t('security_question.answer_placeholder')}
+              secureTextEntry
             />
-          )}
 
-          <TextInput
-            label={t('security_question.your_answer')}
-            value={answer}
-            onChangeText={setAnswer}
-            style={styles.input}
-            mode="outlined"
-            placeholder={t('security_question.answer_placeholder')}
-            secureTextEntry
-          />
-
-          <Button
-            mode="contained"
-            onPress={handleSave}
-            style={styles.saveButton}
-            loading={isLoading}
-            disabled={isLoading}>
-            {existingQuestion
-              ? t('security_question.update_question')
-              : t('security_question.save_question')}
-          </Button>
-
-          {existingQuestion && (
             <Button
-              mode="outlined"
-              onPress={handleClear}
-              style={styles.clearButton}
-              textColor="#FF3B30">
-              {t('security_question.clear_question')}
+              mode="contained"
+              onPress={handleSave}
+              style={styles.saveButton}
+              loading={isLoading}
+              disabled={isLoading}>
+              {existingQuestion
+                ? t('security_question.update_question')
+                : t('security_question.save_question')}
             </Button>
-          )}
-        </Card.Content>
-      </Card>
-    </CustomKeyboardAvoidingView>
+
+            {!isMandatory && existingQuestion && (
+              <Button
+                mode="outlined"
+                onPress={handleClear}
+                style={styles.clearButton}
+                textColor="#FF3B30">
+                {t('security_question.clear_question')}
+              </Button>
+            )}
+          </Card.Content>
+        </Card>
+      </ScrollView>
+
+      {/* Exit Dialog for mandatory mode */}
+      <Portal>
+        <Dialog
+          visible={showExitDialog}
+          onDismiss={() => setShowExitDialog(false)}>
+          <Dialog.Title>{t('security_question.exit_title')}</Dialog.Title>
+          <Dialog.Content>
+            <Text>{t('security_question.exit_message')}</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setShowExitDialog(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              onPress={() => {
+                setShowExitDialog(false);
+                navigation.goBack();
+              }}
+              textColor="#FF3B30">
+              {t('common.exit')}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -230,6 +323,20 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 12,
     elevation: 4,
+  },
+  mandatoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E3F2FD',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  mandatoryText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E88E5',
+    marginLeft: 8,
   },
   title: {
     fontSize: 24,

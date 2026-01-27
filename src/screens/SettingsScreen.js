@@ -17,33 +17,15 @@ import * as Keychain from 'react-native-keychain';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useAlert} from '../contexts/AlertContext';
 import {NativeModules} from 'react-native';
+import { 
+  initializeBiometrics, 
+  isBiometricsAvailable, 
+  authenticateWithBiometrics, 
+  isBiometricsEnabled as checkBiometricsEnabled, 
+  setBiometricsEnabled 
+} from '../utils/biometrics';
 
 const {AppLockModule, PermissionModule} = NativeModules;
-
-// Import biometrics properly - handle the complex export structure
-let biometricsModule;
-try {
-  const ReactNativeBiometrics = require('react-native-biometrics');
-  console.log('Biometrics module loaded:', ReactNativeBiometrics);
-
-  // Extract the actual biometrics module from the complex export
-  // Try different possible export structures
-  if (ReactNativeBiometrics.ReactNativeBiometricsLegacy) {
-    biometricsModule = ReactNativeBiometrics.ReactNativeBiometricsLegacy;
-    console.log('Using ReactNativeBiometricsLegacy');
-  } else if (ReactNativeBiometrics.default) {
-    biometricsModule = ReactNativeBiometrics.default;
-    console.log('Using default export');
-  } else {
-    biometricsModule = ReactNativeBiometrics;
-    console.log('Using direct export');
-  }
-
-  console.log('Available biometrics methods:', Object.keys(biometricsModule));
-} catch (error) {
-  console.warn('Biometrics module not available:', error);
-  biometricsModule = null;
-}
 
 // Import DeviceInfo properly
 let DeviceInfo;
@@ -77,10 +59,11 @@ const SettingsScreen = () => {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [biometricsAvailable, setBiometricsAvailable] = useState(false);
+  const [biometricsType, setBiometricsType] = useState('');
 
   useEffect(() => {
     loadSettings();
-    checkBiometricsAvailability();
+    checkBiometrics();
     checkSecurityStatus();
     loadPermissions();
   }, []);
@@ -171,53 +154,22 @@ const SettingsScreen = () => {
     }
   };
 
-  const checkBiometricsAvailability = async () => {
+  const checkBiometrics = async () => {
     try {
-      if (!biometricsModule) {
-        console.warn('Biometrics module not available');
-        setBiometricsAvailable(false);
-
-        // Check if biometrics is enabled in storage anyway
-        const biometricsEnabledStorage = await AsyncStorage.getItem(
-          'biometrics_enabled',
-        );
-        setBiometricsEnabled(biometricsEnabledStorage === 'true');
-        return;
-      }
-
-      console.log('Checking biometrics with module:', biometricsModule);
-
-      // Check if the method exists
-      if (typeof biometricsModule.isSensorAvailable !== 'function') {
-        console.warn('isSensorAvailable method not found in biometrics module');
-        setBiometricsAvailable(false);
-        return;
-      }
-
-      const {available, biometryType} =
-        await biometricsModule.isSensorAvailable();
-
+      // Initialize biometrics first
+      await initializeBiometrics();
+      
+      // Check availability
+      const {available, biometryType} = await isBiometricsAvailable();
       setBiometricsAvailable(available);
-
-      const biometricsEnabledStorage = await AsyncStorage.getItem(
-        'biometrics_enabled',
-      );
-      setBiometricsEnabled(available && biometricsEnabledStorage === 'true');
-
-      console.log('Biometrics available:', available, 'Type:', biometryType);
+      setBiometricsType(biometryType || '');
+      
+      // Check if enabled
+      const enabled = await checkBiometricsEnabled();
+      setBiometricsEnabled(enabled);
     } catch (error) {
       console.error('Error checking biometrics:', error);
       setBiometricsAvailable(false);
-
-      // Fallback: check storage
-      try {
-        const biometricsEnabledStorage = await AsyncStorage.getItem(
-          'biometrics_enabled',
-        );
-        setBiometricsEnabled(biometricsEnabledStorage === 'true');
-      } catch (storageError) {
-        setBiometricsEnabled(false);
-      }
     }
   };
 
@@ -242,59 +194,16 @@ const SettingsScreen = () => {
 
   const handleToggleBiometrics = async value => {
     if (value) {
+      // Enable biometrics
       try {
-        if (!biometricsModule || !biometricsAvailable) {
-          showAlert(
-            t('alerts.error'),
-            t('settings.biometrics_not_available'),
-            'error',
-          );
-          return;
-        }
-
-        // Check if methods exist
-        if (typeof biometricsModule.isSensorAvailable !== 'function') {
-          showAlert(
-            t('alerts.error'),
-            'Biometrics methods not available',
-            'error',
-          );
-          return;
-        }
-
-        const {available} = await biometricsModule.isSensorAvailable();
-
-        if (!available) {
-          showAlert(
-            t('alerts.error'),
-            t('settings.biometrics_not_available'),
-            'error',
-          );
-          return;
-        }
-
-        const promptMessage =
-          Platform.OS === 'ios'
-            ? 'Authenticate with Face ID'
-            : 'Authenticate with Biometrics';
-
-        // Check if simplePrompt method exists
-        if (typeof biometricsModule.simplePrompt !== 'function') {
-          showAlert(
-            t('alerts.error'),
-            'Biometric prompt method not available',
-            'error',
-          );
-          return;
-        }
-
-        const {success} = await biometricsModule.simplePrompt({
-          promptMessage,
-          cancelButtonText: 'Cancel',
-        });
-
+        const {success, error} = await authenticateWithBiometrics(
+          Platform.OS === 'ios' 
+            ? 'Authenticate with Face ID' 
+            : 'Authenticate with biometrics'
+        );
+        
         if (success) {
-          await AsyncStorage.setItem('biometrics_enabled', 'true');
+          await setBiometricsEnabled(true);
           setBiometricsEnabled(true);
           showAlert(
             t('alerts.success'),
@@ -304,7 +213,7 @@ const SettingsScreen = () => {
         } else {
           showAlert(
             t('alerts.error'),
-            t('settings.biometrics_failed'),
+            error || t('settings.biometrics_failed'),
             'error',
           );
         }
@@ -313,7 +222,8 @@ const SettingsScreen = () => {
         showAlert(t('alerts.error'), t('settings.biometrics_error'), 'error');
       }
     } else {
-      await AsyncStorage.setItem('biometrics_enabled', 'false');
+      // Disable biometrics
+      await setBiometricsEnabled(false);
       setBiometricsEnabled(false);
       showAlert(
         t('settings.biometrics_disabled'),
@@ -579,8 +489,10 @@ const SettingsScreen = () => {
             title={t('settings.biometric')}
             description={
               !biometricsAvailable
-                ? t('settings.biometric_module_unavailable')
-                : t('settings.biometric_desc')
+                ? t('settings.biometric_not_supported')
+                : biometricsType
+                  ? `${t('settings.biometric_available')}: ${biometricsType}`
+                  : t('settings.biometric_desc')
             }
             left={props => (
               <List.Icon
@@ -593,7 +505,7 @@ const SettingsScreen = () => {
               <View style={styles.biometricContainer}>
                 {!biometricsAvailable && (
                   <Text style={styles.unavailableText}>
-                    {t('settings.module_unavailable')}
+                    {t('settings.not_supported')}
                   </Text>
                 )}
                 <Switch
@@ -615,121 +527,6 @@ const SettingsScreen = () => {
           />
         </Card.Content>
       </Card>
-
-      {/* Permissions */}
-      {/* <Card style={styles.card}>
-        <Card.Content>
-          <Text style={styles.sectionTitle}>{t('settings.permissions')}</Text>
-
-          <List.Item
-            title={t('settings.accessibility_service')}
-            description={t('settings.accessibility_service_desc')}
-            left={props => (
-              <List.Icon
-                {...props}
-                icon="accessibility"
-                color={theme.colors.primary}
-              />
-            )}
-            right={props => (
-              <View style={styles.statusContainer}>
-                <Text
-                  style={[
-                    styles.statusText,
-                    {
-                      color: getPermissionStatusColor(
-                        permissions.accessibility,
-                      ),
-                    },
-                  ]}>
-                  {getPermissionStatusText(permissions.accessibility)}
-                </Text>
-                <Button
-                  mode="outlined"
-                  compact
-                  onPress={openAccessibilitySettings}
-                  style={styles.smallButton}>
-                  {t('settings.fix')}
-                </Button>
-              </View>
-            )}
-          />
-
-          <Divider style={styles.divider} />
-
-          <List.Item
-            title={t('settings.overlay_permission')}
-            description={t('settings.overlay_permission_desc')}
-            left={props => (
-              <List.Icon
-                {...props}
-                icon="window-maximize"
-                color={theme.colors.primary}
-              />
-            )}
-            right={props => (
-              <View style={styles.statusContainer}>
-                <Text
-                  style={[
-                    styles.statusText,
-                    {color: getPermissionStatusColor(permissions.overlay)},
-                  ]}>
-                  {getPermissionStatusText(permissions.overlay)}
-                </Text>
-                <Button
-                  mode="outlined"
-                  compact
-                  onPress={openOverlaySettings}
-                  style={styles.smallButton}>
-                  {t('settings.fix')}
-                </Button>
-              </View>
-            )}
-          />
-
-          <Divider style={styles.divider} />
-
-          <List.Item
-            title={t('settings.usage_access')}
-            description={t('settings.usage_access_desc')}
-            left={props => (
-              <List.Icon
-                {...props}
-                icon="chart-bar"
-                color={theme.colors.primary}
-              />
-            )}
-            right={props => (
-              <View style={styles.statusContainer}>
-                <Text
-                  style={[
-                    styles.statusText,
-                    {color: getPermissionStatusColor(permissions.usageAccess)},
-                  ]}>
-                  {getPermissionStatusText(permissions.usageAccess)}
-                </Text>
-                <Button
-                  mode="outlined"
-                  compact
-                  onPress={openUsageAccessSettings}
-                  style={styles.smallButton}>
-                  {t('settings.fix')}
-                </Button>
-              </View>
-            )}
-          />
-
-          <Button
-            mode="contained"
-            onPress={testAccessibilityService}
-            loading={isLoading}
-            disabled={isLoading}
-            style={styles.testButton}
-            icon="test-tube">
-            {t('settings.test_service')}
-          </Button>
-        </Card.Content>
-      </Card> */}
 
       {/* Language & Regional */}
       <Card style={styles.card}>
@@ -756,34 +553,6 @@ const SettingsScreen = () => {
         </Card.Content>
       </Card>
 
-      {/* Premium Features */}
-      {/* <Card style={styles.card}>
-        <Card.Content>
-          <Text style={styles.sectionTitle}>{t('settings.premium')}</Text>
-
-          <List.Item
-            title={
-              isPremium
-                ? t('settings.premium_activated')
-                : t('settings.upgrade_premium')
-            }
-            description={
-              isPremium
-                ? t('settings.premium_thanks')
-                : t('settings.premium_description')
-            }
-            left={props => (
-              <List.Icon
-                {...props}
-                icon="crown"
-                color={isPremium ? '#FFD700' : theme.colors.primary}
-              />
-            )}
-            onPress={handleUpgradeToPremium}
-          />
-        </Card.Content>
-      </Card> */}
-
       {/* Maintenance */}
       <Card style={styles.card}>
         <Card.Content>
@@ -804,7 +573,7 @@ const SettingsScreen = () => {
             )}
             onPress={resetAppData}
           />
-        </Card.Content>
+      </Card.Content>
       </Card>
 
       {/* Support */}
@@ -849,7 +618,7 @@ const SettingsScreen = () => {
         </Text>
         {!biometricsAvailable && (
           <Text style={styles.debugInfo}>
-            Debug: Biometrics module not linked
+            Biometrics module not available
           </Text>
         )}
       </View>
