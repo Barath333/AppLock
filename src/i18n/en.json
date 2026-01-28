@@ -21,7 +21,8 @@
     "error": "Error",
     "success": "Success",
     "warning": "Warning",
-    "note": "Note"
+    "note": "Note",
+    "checking": "Checking..."
   },
 
   "splash": {
@@ -60,7 +61,6 @@
     "no_apps_available": "No apps available. Please check if app permissions are granted.",
     "clear_search": "Clear Search",
     "this_app": "This App",
-
     "security_question_required": "Security Question Required",
     "security_question_mandatory_desc": "You need to set up a security question before using the app. This will be used if you forget your PIN.",
     "set_security_question": "Set Security Question"
@@ -110,11 +110,25 @@
     "invalid_pin": "Invalid PIN",
     "attempts_remaining": "attempts remaining",
     "too_many_attempts": "Too many failed attempts. Try again in {{minutes}} minutes",
-    "minutes": "minutes"
+    "minutes": "minutes",
+    "use_biometrics": "Use biometrics to unlock",
+    "tap_biometric_to_retry": "Tap the biometric icon to try again",
+    "biometric_failed": "Biometric authentication failed",
+    "biometric_error": "Biometric authentication error",
+    "unlock_with_face_id": "Authenticate to unlock with Face ID",
+    "unlock_with_fingerprint": "Authenticate to unlock with fingerprint",
+    "unlock_with_biometrics": "Authenticate to unlock",
+    "use_pin_instead": "Use PIN instead",
+    "use_biometrics_instead": "Use biometrics instead",
+    "touch_to_use_face_id": "Touch to use Face ID",
+    "touch_to_use_fingerprint": "Touch to use Fingerprint",
+    "touch_to_authenticate": "Touch to authenticate",
+    "tap_to_authenticate": "Tap to authenticate"
   },
 
   "settings": {
     "title": "Settings",
+    "refresh_status": "Refresh Status",
     "security": "Security",
     "premium": "Premium",
     "support": "Support",
@@ -137,7 +151,6 @@
     "change_password_desc": "Update your security PIN",
     "security_question_desc": "Set up PIN recovery question",
     "security_auth": "Security & Authentication",
-
     "biometric_desc": "Use fingerprint or face ID to unlock the app",
     "biometric_not_supported": "Biometric authentication is not supported on this device",
     "biometric_available": "Available",
@@ -174,7 +187,13 @@
     "reset_confirmation": "This will clear all your locked apps and settings. This action cannot be undone.",
     "reset_success": "App data has been reset successfully",
     "contact_support_desc": "Get help with the app",
-    "about_desc": "App version and information",
+    "about_button_title": "About",
+    "about_button_desc": "Learn more about App Lock",
+    "app_version": "App Lock v1.0.0",
+    "copyright": "© {{year}} App Lock. All rights reserved.",
+    "enable_face_id_prompt": "Enable Face ID authentication",
+    "enable_biometrics_prompt": "Enable biometric authentication",
+    "setting_save_failed": "Failed to save setting",
     "warnings": {
       "rooted_device": "Rooted device detected",
       "jailbroken_device": "Jailbroken device detected",
@@ -201,13 +220,11 @@
   "security_question": {
     "title": "Security Question",
     "subtitle": "Set up a security question to recover your PIN if you forget it",
-
     "mandatory_title": "Required Setup",
     "mandatory_setup_title": "Set Security Question",
     "mandatory_subtitle": "You must set a security question to use the app. This will help you reset your PIN if you forget it.",
     "exit_title": "Exit Setup",
     "exit_message": "You must set a security question to use the app. Are you sure you want to exit?",
-
     "select_question": "Select a Security Question",
     "custom_question": "Custom question (enter below)",
     "your_answer": "Your Answer",
@@ -243,7 +260,6 @@
     "no_question_set": "Security question not set up. Please set it up in Settings.",
     "reset_warning": "This will reset your PIN and unlock all apps. You will need to set up a new PIN.",
     "reset_success": "PIN has been reset. All apps are now unlocked.",
-
     "reset_password": "Reset Password",
     "security_question_required": "Answer your security question to reset PIN",
     "set_new_pin": "Set New PIN",
@@ -315,13 +331,15 @@
     "test_failed": "Test failed",
     "reset_failed_data": "Failed to reset data",
     "operation_failed": "Operation failed. Please try again.",
-
     "enter_security_answer": "Please enter your security answer",
     "security_question_not_set": "Security question not set",
     "incorrect_security_answer": "Incorrect security answer",
     "verification_failed": "Failed to verify answer",
     "reset_pin_failed": "Failed to reset PIN",
-    "load_security_question_failed": "Failed to load security question"
+    "load_security_question_failed": "Failed to load security question",
+    "pin_mismatch": "PINs do not match",
+    "reset_failed_title": "Error",
+    "reset_failed_message": "Failed to reset app. Please restart the application."
   },
 
   "alerts": {

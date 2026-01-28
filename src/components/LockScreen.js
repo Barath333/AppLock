@@ -1,3 +1,4 @@
+// LockScreen.js - FIXED VERSION (No auto-trigger)
 import React, {useState, useRef, useEffect} from 'react';
 import {
   View,
@@ -21,6 +22,12 @@ import {BannerAd, BannerAdSize, TestIds} from 'react-native-google-mobile-ads';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useTranslation} from 'react-i18next';
 import {useAlert} from '../contexts/AlertContext';
+import { 
+  initializeBiometrics, 
+  isBiometricsAvailable, 
+  authenticateWithBiometrics, 
+  isBiometricsEnabled as checkBiometricsEnabled 
+} from '../utils/biometrics';
 
 const {AppLockModule} = NativeModules;
 
@@ -30,7 +37,7 @@ const adUnitId = __DEV__
 
 const {width, height} = Dimensions.get('window');
 
-const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
+const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin, biometricsEnabled: propBiometricsEnabled}) => {
   const {t} = useTranslation();
   const {showAlert} = useAlert();
   const [pin, setPin] = useState('');
@@ -39,22 +46,61 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
   const [isLoading, setIsLoading] = useState(false);
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockUntil, setLockUntil] = useState(null);
+  const [biometricsEnabled, setBiometricsEnabled] = useState(false);
+  const [biometricsAvailable, setBiometricsAvailable] = useState(false);
+  const [biometricsType, setBiometricsType] = useState('');
+  const [showPinEntry, setShowPinEntry] = useState(false);
+  const [isAuthenticatingBiometrics, setIsAuthenticatingBiometrics] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const [hasAttemptedManualUnlock, setHasAttemptedManualUnlock] = useState(false);
 
   useEffect(() => {
     if (visible) {
       console.log('🔒 LockScreen mounted for app:', appInfo?.packageName);
+      console.log('📱 Biometrics prop from parent:', propBiometricsEnabled);
       setPin('');
       setError('');
       setIsLoading(false);
+      setHasAttemptedManualUnlock(false);
       loadFailedAttempts();
+      checkBiometricsAvailability();
 
       // Ensure the app is brought to front when lock screen becomes visible
       setTimeout(() => {
         AppLockModule.bringToFront();
       }, 100);
+      
+      // REMOVED: Auto-trigger biometrics - now only on manual tap
     }
   }, [visible, appInfo]);
+
+  const checkBiometricsAvailability = async () => {
+    try {
+      console.log('🔍 Checking biometrics availability...');
+      // Initialize biometrics
+      await initializeBiometrics();
+      
+      // Check availability
+      const {available, biometryType} = await isBiometricsAvailable();
+      setBiometricsAvailable(available);
+      setBiometricsType(biometryType || '');
+      
+      // Use prop from parent if available, otherwise check locally
+      if (propBiometricsEnabled !== undefined) {
+        setBiometricsEnabled(propBiometricsEnabled && available);
+      } else {
+        const enabled = await checkBiometricsEnabled();
+        setBiometricsEnabled(enabled && available);
+      }
+      
+      console.log(`📋 Biometrics Status: Available=${available}, Type=${biometryType}, Enabled=${biometricsEnabled}`);
+    } catch (error) {
+      console.error('Error checking biometrics availability:', error);
+      setBiometricsAvailable(false);
+      setBiometricsEnabled(false);
+    }
+  };
 
   const loadFailedAttempts = async () => {
     try {
@@ -108,7 +154,92 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
     }
   };
 
-  const handleUnlock = async () => {
+  const handleBiometricUnlock = async () => {
+    if (lockUntil && Date.now() < lockUntil) {
+      const remainingTime = Math.ceil((lockUntil - Date.now()) / 1000 / 60);
+      setError(t('lock_screen.too_many_attempts', {minutes: remainingTime}));
+      return;
+    }
+
+    setIsAuthenticatingBiometrics(true);
+    setError('');
+    setHasAttemptedManualUnlock(true);
+
+    try {
+      console.log('🔐 Starting biometric authentication...');
+      
+    const promptMessage =
+  Platform.OS === 'ios'
+    ? t('lock_screen.unlock_with_face_id')
+    : Platform.OS === 'android' && biometricsType === 'Fingerprint'
+    ? t('lock_screen.unlock_with_fingerprint')
+    : t('lock_screen.unlock_with_biometrics');
+
+      
+      const {success, error: authError} = await authenticateWithBiometrics(promptMessage);
+
+      if (success) {
+        console.log('✅ Biometric authentication successful');
+        await resetFailedAttempts();
+        
+        // Success animation
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => {
+          // Call onUnlock after animation
+          if (onUnlock) {
+            console.log('🔄 Calling onUnlock callback after biometrics');
+            onUnlock();
+          }
+        });
+      } else {
+        console.log('❌ Biometric authentication failed:', authError);
+        setIsAuthenticatingBiometrics(false);
+        
+        // Don't show error for user cancellation
+        if (authError && authError.includes('cancel')) {
+          console.log('👤 User cancelled biometric authentication');
+          // Show instruction to tap icon again
+          setError(t('lock_screen.tap_biometric_to_retry'));
+        } else {
+          setError(t('lock_screen.biometric_failed'));
+          
+          // Shake animation for error
+          Animated.sequence([
+            Animated.timing(shakeAnim, {
+              toValue: 10,
+              duration: 100,
+              useNativeDriver: true,
+            }),
+            Animated.timing(shakeAnim, {
+              toValue: -10,
+              duration: 100,
+              useNativeDriver: true,
+            }),
+            Animated.timing(shakeAnim, {
+              toValue: 10,
+              duration: 100,
+              useNativeDriver: true,
+            }),
+            Animated.timing(shakeAnim, {
+              toValue: 0,
+              duration: 100,
+              useNativeDriver: true,
+            }),
+          ]).start();
+        }
+      }
+    } catch (error) {
+      console.error('❌ Biometric authentication error:', error);
+      setIsAuthenticatingBiometrics(false);
+      setError(t('lock_screen.biometric_error'));
+      // Don't automatically switch to PIN on error - let user choose
+    }
+  };
+
+  const handlePinUnlock = async () => {
     if (lockUntil && Date.now() < lockUntil) {
       const remainingTime = Math.ceil((lockUntil - Date.now()) / 1000 / 60);
       setError(t('lock_screen.too_many_attempts', {minutes: remainingTime}));
@@ -137,16 +268,18 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
         console.log('✅ PIN verified successfully');
         await resetFailedAttempts();
         
-        // CRITICAL FIX: Only call onUnlock after successful PIN verification
-        if (onUnlock) {
-          console.log('🔄 Calling onUnlock callback');
-          onUnlock();
-        } else if (
-          AppLockModule &&
-          typeof AppLockModule.closeLockScreen === 'function'
-        ) {
-          AppLockModule.closeLockScreen();
-        }
+        // Success animation
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => {
+          // Call onUnlock after animation
+          if (onUnlock) {
+            console.log('🔄 Calling onUnlock callback after PIN');
+            onUnlock();
+          }
+        });
       } else {
         console.log('❌ Invalid PIN');
         await incrementFailedAttempts();
@@ -193,15 +326,28 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin}) => {
     }
   };
 
+  const handleForgotPin = async () => {
+    console.log('🔓 Forgot PIN clicked in LockScreen');
+    
+    // Simply call the onForgotPin prop - let parent handle navigation
+    if (onForgotPin) {
+      onForgotPin();
+    }
+  };
 
-const handleForgotPin = async () => {
-  console.log('🔓 Forgot PIN clicked in LockScreen');
-  
-  // Simply call the onForgotPin prop - let parent handle navigation
-  if (onForgotPin) {
-    onForgotPin();
-  }
-};
+  const switchToPinEntry = () => {
+    setShowPinEntry(true);
+    setError('');
+    setIsAuthenticatingBiometrics(false);
+  };
+
+  const switchToBiometrics = () => {
+    setShowPinEntry(false);
+    setError('');
+    setPin('');
+    setIsAuthenticatingBiometrics(false);
+    setHasAttemptedManualUnlock(false);
+  };
 
   useEffect(() => {
     const backHandler = BackHandler.addEventListener(
@@ -219,6 +365,8 @@ const handleForgotPin = async () => {
 
   if (!visible || !appInfo) return null;
 
+  const showBiometricOption = biometricsEnabled && biometricsAvailable && !showPinEntry;
+
   return (
     <Modal
       visible={visible}
@@ -229,8 +377,7 @@ const handleForgotPin = async () => {
       onRequestClose={() => console.log('🔒 Lock screen back button pressed')}
       presentationStyle="fullScreen"
       supportedOrientations={['portrait', 'landscape']}>
-      {/* FIX: Use View instead of TouchableWithoutFeedback for better performance */}
-      <View style={styles.container}>
+      <Animated.View style={[styles.container, {opacity: fadeAnim}]}>
         <StatusBar
           backgroundColor="#FFFFFF"
           barStyle="dark-content"
@@ -269,7 +416,12 @@ const handleForgotPin = async () => {
           <Text style={styles.appName}>
             {appInfo.name} {t('lock_screen.app_locked')}
           </Text>
-          <Text style={styles.prompt}>{t('lock_screen.enter_pin')}</Text>
+          
+          {showBiometricOption ? (
+            <Text style={styles.prompt}>{t('lock_screen.use_biometrics')}</Text>
+          ) : (
+            <Text style={styles.prompt}>{t('lock_screen.enter_pin')}</Text>
+          )}
 
           {lockUntil && Date.now() < lockUntil && (
             <View style={styles.lockWarning}>
@@ -282,64 +434,151 @@ const handleForgotPin = async () => {
             </View>
           )}
 
-          <Animated.View
-            style={[
-              styles.inputContainer,
-              {transform: [{translateX: shakeAnim}]},
-            ]}>
-            <TextInput
-              value={pin}
-              onChangeText={text => {
-                setPin(text);
-                setError('');
-              }}
-              secureTextEntry={!showPin}
-              keyboardType="numeric"
-              style={styles.pinInput}
-              maxLength={6}
-              mode="flat"
-              underlineColor="transparent"
-              selectionColor="#1E88E5"
-              theme={{
-                colors: {
-                  primary: '#1E88E5',
-                  text: '#333',
-                  placeholder: '#888',
-                },
-              }}
-              editable={!lockUntil || Date.now() >= lockUntil}
-              placeholder={t('setup.enter_pin')}
-              right={
-                <TextInput.Icon
-                  icon={showPin ? 'eye-off' : 'eye'}
-                  onPress={() => setShowPin(!showPin)}
-                  color="#1E88E5"
-                />
-              }
-              autoFocus={true} // Auto focus for better UX
-            />
-          </Animated.View>
+          {/* Biometric Unlock Option */}
+          {showBiometricOption && (
+            <Animated.View
+              style={[
+                styles.biometricContainer,
+                {transform: [{translateX: shakeAnim}]},
+              ]}>
+              <TouchableOpacity
+                style={[
+                  styles.biometricButton,
+                  isAuthenticatingBiometrics && styles.biometricButtonLoading,
+                ]}
+                onPress={handleBiometricUnlock}
+                disabled={isAuthenticatingBiometrics || (lockUntil && Date.now() < lockUntil)}>
+                <View style={styles.biometricIconContainer}>
+                  {isAuthenticatingBiometrics ? (
+                    <View style={styles.biometricLoading}>
+                      <Icon name="loading" size={48} color="#1E88E5" />
+                    </View>
+                  ) : (
+                    <>
+                      <Icon
+                        name={
+                          Platform.OS === 'ios' 
+                            ? 'face-recognition' 
+                            : biometricsType === 'Fingerprint' 
+                              ? 'fingerprint' 
+                              : biometricsType === 'Face' 
+                                ? 'face-recognition' 
+                                : 'fingerprint'
+                        }
+                        size={64}
+                        color="#1E88E5"
+                      />
+   <Text style={styles.biometricText}>
+  {Platform.OS === 'ios'
+    ? t('lock_screen.touch_to_use_face_id')
+    : biometricsType === 'Fingerprint'
+      ? t('lock_screen.touch_to_use_fingerprint')
+      : t('lock_screen.touch_to_authenticate')}
+</Text>
+<Text style={styles.biometricSubText}>
+  {t('lock_screen.tap_to_authenticate')}
+</Text>
+
+                    </>
+                  )}
+                </View>
+              </TouchableOpacity>
+              
+              {/* Switch to PIN button */}
+              <TouchableOpacity
+                onPress={switchToPinEntry}
+                style={styles.switchButton}>
+                <Text style={styles.switchButtonText}>
+                  {t('lock_screen.use_pin_instead')}
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+          )}
+
+          {/* PIN Entry Option */}
+          {(!showBiometricOption || showPinEntry) && (
+            <Animated.View
+              style={[
+                styles.inputContainer,
+                {transform: [{translateX: shakeAnim}]},
+              ]}>
+              <TextInput
+                value={pin}
+                onChangeText={text => {
+                  setPin(text);
+                  setError('');
+                }}
+                secureTextEntry={!showPin}
+                keyboardType="numeric"
+                style={styles.pinInput}
+                maxLength={6}
+                mode="flat"
+                underlineColor="transparent"
+                selectionColor="#1E88E5"
+                theme={{
+                  colors: {
+                    primary: '#1E88E5',
+                    text: '#333',
+                    placeholder: '#888',
+                  },
+                }}
+                editable={!lockUntil || Date.now() >= lockUntil}
+                placeholder={t('setup.enter_pin')}
+                right={
+                  <TextInput.Icon
+                    icon={showPin ? 'eye-off' : 'eye'}
+                    onPress={() => setShowPin(!showPin)}
+                    color="#1E88E5"
+                  />
+                }
+                autoFocus={true}
+              />
+              
+              {/* Switch back to biometrics if available */}
+              {biometricsEnabled && biometricsAvailable && showPinEntry && (
+                <TouchableOpacity
+                  onPress={switchToBiometrics}
+                  style={styles.switchToBiometricsButton}>
+                  <Icon 
+                    name={
+                      Platform.OS === 'ios' 
+                        ? 'face-recognition' 
+                        : 'fingerprint'
+                    } 
+                    size={16} 
+                    color="#1E88E5" 
+                  />
+                  <Text style={styles.switchToBiometricsText}>
+                    {t('lock_screen.use_biometrics_instead')}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </Animated.View>
+          )}
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
-          <TouchableOpacity
-            onPress={handleUnlock}
-            disabled={
-              pin.length < 4 ||
-              isLoading ||
-              (lockUntil && Date.now() < lockUntil)
-            }
-            style={[
-              styles.unlockButton,
-              (pin.length < 4 ||
+          {/* Unlock Button (only shown for PIN entry) */}
+          {(!showBiometricOption || showPinEntry) && (
+            <TouchableOpacity
+              onPress={handlePinUnlock}
+              disabled={
+                pin.length < 4 ||
                 isLoading ||
-                (lockUntil && Date.now() < lockUntil)) &&
-                styles.unlockButtonDisabled,
-            ]}>
-            <Text style={styles.unlockButtonText}>
-              {isLoading ? t('common.loading') : t('lock_screen.unlock')}
-            </Text>
-          </TouchableOpacity>
+                (lockUntil && Date.now() < lockUntil)
+              }
+              style={[
+                styles.unlockButton,
+                (pin.length < 4 ||
+                  isLoading ||
+                  (lockUntil && Date.now() < lockUntil)) &&
+                  styles.unlockButtonDisabled,
+              ]}>
+              <Text style={styles.unlockButtonText}>
+                {isLoading ? t('common.loading') : t('lock_screen.unlock')}
+              </Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             onPress={handleForgotPin}
@@ -360,7 +599,7 @@ const handleForgotPin = async () => {
             {t('common.app_name')} - {t('splash.subtitle')}
           </Text>
         </View>
-      </View>
+      </Animated.View>
     </Modal>
   );
 };
@@ -433,6 +672,61 @@ const styles = StyleSheet.create({
     fontSize: 14,
     flex: 1,
   },
+  biometricContainer: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  biometricButton: {
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  biometricButtonLoading: {
+    backgroundColor: '#E3F2FD',
+  },
+  biometricIconContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  biometricLoading: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  biometricText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#1E88E5',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  biometricSubText: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+  },
+  switchButton: {
+    marginTop: 25,
+    padding: 12,
+    backgroundColor: '#E3F2FD',
+    borderRadius: 8,
+    width: '80%',
+    alignItems: 'center',
+  },
+  switchButtonText: {
+    color: '#1E88E5',
+    fontSize: 14,
+    fontWeight: '500',
+  },
   inputContainer: {
     width: '100%',
     marginBottom: 20,
@@ -441,6 +735,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
     borderRadius: 12,
     height: 50,
+  },
+  switchToBiometricsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 15,
+    padding: 12,
+    backgroundColor: '#E3F2FD',
+    borderRadius: 8,
+  },
+  switchToBiometricsText: {
+    color: '#1E88E5',
+    fontSize: 14,
+    marginLeft: 6,
+    fontWeight: '500',
   },
   error: {
     color: '#FF3B30',

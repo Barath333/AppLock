@@ -1,3 +1,4 @@
+// SettingsScreen.js - UPDATED VERSION
 import React, {useState, useEffect} from 'react';
 import {
   View,
@@ -44,7 +45,7 @@ const SettingsScreen = () => {
   const {showAlert} = useAlert();
   const theme = useTheme();
 
-  const [biometricsEnabled, setBiometricsEnabled] = useState(false);
+  const [biometricsEnabled, setBiometricsEnabledState] = useState(false);
   const [isPremium, setIsPremium] = useState(false);
   const [securityStatus, setSecurityStatus] = useState({
     deviceSecure: true,
@@ -60,8 +61,10 @@ const SettingsScreen = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [biometricsAvailable, setBiometricsAvailable] = useState(false);
   const [biometricsType, setBiometricsType] = useState('');
+  const [isCheckingBiometrics, setIsCheckingBiometrics] = useState(false);
 
   useEffect(() => {
+    console.log('⚙️ SettingsScreen mounted');
     loadSettings();
     checkBiometrics();
     checkSecurityStatus();
@@ -156,20 +159,44 @@ const SettingsScreen = () => {
 
   const checkBiometrics = async () => {
     try {
+      console.log('🔍 Checking biometrics status...');
+      setIsCheckingBiometrics(true);
+      
       // Initialize biometrics first
-      await initializeBiometrics();
+      const initialized = await initializeBiometrics();
+      console.log('🔧 Biometrics initialized:', initialized);
       
-      // Check availability
-      const {available, biometryType} = await isBiometricsAvailable();
-      setBiometricsAvailable(available);
-      setBiometricsType(biometryType || '');
-      
-      // Check if enabled
-      const enabled = await checkBiometricsEnabled();
-      setBiometricsEnabled(enabled);
+      if (initialized) {
+        // Check availability
+        const {available, biometryType} = await isBiometricsAvailable();
+        console.log('📋 Biometrics availability:', available, 'Type:', biometryType);
+        
+        setBiometricsAvailable(available);
+        setBiometricsType(biometryType || '');
+        
+        // Check if enabled in AsyncStorage
+        try {
+          const enabledValue = await AsyncStorage.getItem('biometrics_enabled');
+          console.log('📂 Reading from AsyncStorage - biometrics_enabled:', enabledValue);
+          
+          const enabled = enabledValue === 'true';
+          setBiometricsEnabledState(enabled && available);
+          console.log('✅ Biometrics enabled state:', enabled && available);
+        } catch (storageError) {
+          console.error('❌ Error reading from AsyncStorage:', storageError);
+          setBiometricsEnabledState(false);
+        }
+      } else {
+        console.log('❌ Biometrics not initialized');
+        setBiometricsAvailable(false);
+        setBiometricsEnabledState(false);
+      }
     } catch (error) {
-      console.error('Error checking biometrics:', error);
+      console.error('❌ Error checking biometrics:', error);
       setBiometricsAvailable(false);
+      setBiometricsEnabledState(false);
+    } finally {
+      setIsCheckingBiometrics(false);
     }
   };
 
@@ -196,40 +223,77 @@ const SettingsScreen = () => {
     if (value) {
       // Enable biometrics
       try {
-        const {success, error} = await authenticateWithBiometrics(
-          Platform.OS === 'ios' 
-            ? 'Authenticate with Face ID' 
-            : 'Authenticate with biometrics'
-        );
+        console.log('🔐 Attempting to enable biometrics...');
         
-        if (success) {
-          await setBiometricsEnabled(true);
-          setBiometricsEnabled(true);
-          showAlert(
-            t('alerts.success'),
-            t('settings.biometrics_enabled'),
-            'success',
-          );
-        } else {
+        // First verify biometrics are available
+        const {available} = await isBiometricsAvailable();
+        if (!available) {
           showAlert(
             t('alerts.error'),
-            error || t('settings.biometrics_failed'),
+            t('settings.biometric_not_supported'),
+            'error',
+          );
+          return;
+        }
+
+        // Show biometrics prompt
+const promptMessage =
+  Platform.OS === 'ios'
+    ? t('settings.enable_face_id_prompt')
+    : t('settings.enable_biometrics_prompt');
+        
+        const {success, error: authError} = await authenticateWithBiometrics(promptMessage);
+
+        if (success) {
+          console.log('✅ Biometric authentication successful');
+          
+          // Save to AsyncStorage
+          try {
+            await AsyncStorage.setItem('biometrics_enabled', 'true');
+            console.log('💾 Saved biometrics_enabled=true to AsyncStorage');
+            
+            // Update state
+            setBiometricsEnabledState(true);
+            
+            showAlert(
+              t('alerts.success'),
+              t('settings.biometrics_enabled'),
+              'success',
+            );
+          } catch (storageError) {
+            console.error('❌ Error saving to AsyncStorage:', storageError);
+            showAlert(t('alerts.error'), t('errors.setting_save_failed'), 'error');
+          }
+        } else {
+          console.log('❌ Biometric authentication failed:', authError);
+          showAlert(
+            t('alerts.error'),
+            authError || t('settings.biometrics_failed'),
             'error',
           );
         }
       } catch (error) {
-        console.error('Error enabling biometrics:', error);
+        console.error('❌ Error enabling biometrics:', error);
         showAlert(t('alerts.error'), t('settings.biometrics_error'), 'error');
       }
     } else {
       // Disable biometrics
-      await setBiometricsEnabled(false);
-      setBiometricsEnabled(false);
-      showAlert(
-        t('settings.biometrics_disabled'),
-        t('settings.biometrics_disabled_message'),
-        'info',
-      );
+      try {
+        console.log('❌ Disabling biometrics...');
+        await AsyncStorage.setItem('biometrics_enabled', 'false');
+        console.log('💾 Saved biometrics_enabled=false to AsyncStorage');
+        
+        setBiometricsEnabledState(false);
+        
+        showAlert(
+          t('settings.biometrics_disabled'),
+          t('settings.biometrics_disabled_message'),
+          'info',
+        );
+      } catch (error) {
+        console.error('❌ Error disabling biometrics:', error);
+        showAlert(t('alerts.error'), t('errors.setting_save_failed'), 'error');
+      }
     }
   };
 
@@ -342,6 +406,9 @@ const SettingsScreen = () => {
               await AppLockModule.setLockedApps([]);
             }
 
+            // Reset local state
+            setBiometricsEnabledState(false);
+
             showAlert(
               t('alerts.success'),
               t('settings.reset_success'),
@@ -367,6 +434,10 @@ const SettingsScreen = () => {
   const getCurrentLanguageName = () => {
     const language = languages.find(lang => lang.code === currentLanguage);
     return language ? language.nativeName : 'English';
+  };
+
+  const refreshBiometricsStatus = () => {
+    checkBiometrics();
   };
 
   return (
@@ -488,7 +559,9 @@ const SettingsScreen = () => {
           <List.Item
             title={t('settings.biometric')}
             description={
-              !biometricsAvailable
+              isCheckingBiometrics
+                ? t('settings.checking_biometrics')
+                : !biometricsAvailable
                 ? t('settings.biometric_not_supported')
                 : biometricsType
                   ? `${t('settings.biometric_available')}: ${biometricsType}`
@@ -503,28 +576,44 @@ const SettingsScreen = () => {
             )}
             right={() => (
               <View style={styles.biometricContainer}>
-                {!biometricsAvailable && (
+                {isCheckingBiometrics ? (
+                  <Text style={styles.checkingText}>
+                    {t('common.checking')}
+                  </Text>
+                ) : !biometricsAvailable ? (
                   <Text style={styles.unavailableText}>
                     {t('settings.not_supported')}
                   </Text>
+                ) : (
+                  <Switch
+                    value={biometricsEnabled}
+                    onValueChange={handleToggleBiometrics}
+                    disabled={isCheckingBiometrics}
+                    thumbColor={
+                      biometricsEnabled
+                        ? theme.colors.primary
+                        : '#f4f3f4'
+                    }
+                    trackColor={{
+                      false: '#767577',
+                      true: theme.colors.primary,
+                    }}
+                  />
                 )}
-                <Switch
-                  value={biometricsEnabled}
-                  onValueChange={handleToggleBiometrics}
-                  disabled={!biometricsAvailable}
-                  thumbColor={
-                    biometricsEnabled && biometricsAvailable
-                      ? theme.colors.primary
-                      : '#f4f3f4'
-                  }
-                  trackColor={{
-                    false: '#767577',
-                    true: biometricsAvailable ? '#BBDEFB' : '#CCC',
-                  }}
-                />
               </View>
             )}
           />
+          
+          {biometricsAvailable && (
+            <Button
+              mode="outlined"
+              onPress={refreshBiometricsStatus}
+              style={styles.refreshButton}
+              icon="refresh"
+              compact>
+              {t('settings.refresh_status')}
+            </Button>
+          )}
         </Card.Content>
       </Card>
 
@@ -596,32 +685,38 @@ const SettingsScreen = () => {
 
           <Divider style={styles.divider} />
 
-          <List.Item
-            title={t('settings.about')}
-            description={t('settings.about_desc')}
-            left={props => (
-              <List.Icon
-                {...props}
-                icon="information"
-                color={theme.colors.primary}
-              />
-            )}
-            onPress={handleAbout}
-          />
+   <List.Item
+  title={t('settings.about_button_title')}
+  description={t('settings.about_button_desc')}
+  left={props => (
+    <List.Icon
+      {...props}
+      icon="information"
+      color={theme.colors.primary}
+    />
+  )}
+  onPress={handleAbout}
+/>
         </Card.Content>
       </Card>
 
-      <View style={styles.footer}>
-        <Text style={styles.version}>{t('common.app_name')} v1.0.0</Text>
-        <Text style={styles.copyright}>
-          © 2025 AppLock. All rights reserved.
-        </Text>
-        {!biometricsAvailable && (
-          <Text style={styles.debugInfo}>
-            Biometrics module not available
-          </Text>
-        )}
-      </View>
+  <View style={styles.footer}>
+<Text style={styles.version}>
+  {t('settings.app_version')}
+</Text>
+
+<Text style={styles.copyright}>
+  {t('settings.copyright', {year: new Date().getFullYear()})}
+</Text>
+
+  {/* <Text style={styles.debugInfo}>
+    Biometrics: {biometricsAvailable ? 'Available' : 'Not Available'} |{' '}
+    Enabled: {biometricsEnabled ? 'Yes' : 'No'} |{' '}
+    Type: {biometricsType || 'None'}
+  </Text> */}
+</View>
+
+
     </ScrollView>
   );
 };
@@ -706,24 +801,23 @@ const styles = StyleSheet.create({
   divider: {
     marginVertical: 8,
   },
-  statusContainer: {
-    alignItems: 'flex-end',
-  },
   biometricContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
+  checkingText: {
+    fontSize: 12,
+    color: '#FF9800',
+    marginRight: 8,
+  },
   unavailableText: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#F44336',
     marginRight: 8,
   },
-  smallButton: {
-    marginTop: 4,
-    height: 30,
-  },
-  testButton: {
+  refreshButton: {
     marginTop: 16,
+    alignSelf: 'center',
   },
   footer: {
     alignItems: 'center',
@@ -739,9 +833,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   debugInfo: {
-    color: '#FF9800',
+    color: '#666',
     fontSize: 10,
     marginTop: 8,
+    textAlign: 'center',
   },
 });
 

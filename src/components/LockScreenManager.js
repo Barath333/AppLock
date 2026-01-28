@@ -46,10 +46,24 @@ const LockScreenManager = ({
   const eventQueue = useRef([]);
   const isProcessingEvent = useRef(false);
   const lastEventTime = useRef(0);
+  const [biometricsEnabled, setBiometricsEnabled] = useState(false);
+
+
+  const checkBiometricsStatus = async () => {
+  try {
+    const enabled = await AsyncStorage.getItem('biometrics_enabled');
+    setBiometricsEnabled(enabled === 'true');
+    console.log('🔐 Biometrics enabled status:', enabled === 'true');
+  } catch (error) {
+    console.error('Error checking biometrics status:', error);
+    setBiometricsEnabled(false);
+  }
+};
 
   useEffect(() => {
     console.log('🔧 LockScreenManager mounted - isAppLockMode:', isAppLockMode);
     initializeLockScreenManager();
+      checkBiometricsStatus();
 
     const appStateSubscription = AppState.addEventListener(
       'change',
@@ -116,37 +130,38 @@ const LockScreenManager = ({
     };
   };
 
-  const handleAppStateChange = nextAppState => {
-    console.log(
-      '📱 App State Changed:',
-      appStateRef.current,
-      '->',
-      nextAppState,
-    );
+// In LockScreenManager.js, update the handleAppStateChange function:
+const handleAppStateChange = nextAppState => {
+  console.log(
+    '📱 App State Changed:',
+    appStateRef.current,
+    '->',
+    nextAppState,
+  );
 
-    if (nextAppState === 'background') {
-      console.log('📱 App went to background');
-      setIsUnlocking(false);
-      lastProcessedPackage.current = null;
-      if (unlockTimeoutRef.current) clearTimeout(unlockTimeoutRef.current);
-      
-      // When our app goes to background, don't clear session unlocks
-      // They should persist across app switches
-    } else if (nextAppState === 'active') {
-      console.log('📱 App became active');
-      checkAccessibilityService();
+  if (nextAppState === 'background') {
+    console.log('📱 App went to background');
+    setIsUnlocking(false);
+    lastProcessedPackage.current = null;
+    if (unlockTimeoutRef.current) clearTimeout(unlockTimeoutRef.current);
+  } else if (nextAppState === 'active') {
+    console.log('📱 App became active');
+    checkAccessibilityService();
+    
+    // CRITICAL: Refresh biometrics status when app becomes active
+    checkBiometricsStatus();
 
-      // Process any queued events
-      processNextQueuedEvent();
+    // Process any queued events
+    processNextQueuedEvent();
 
-      // Check for pending locked apps if not showing lock screen and not in AppLock mode
-      if (!showLockScreen && !isAppLockMode) {
-        checkPendingLockedApp();
-      }
+    // Check for pending locked apps if not showing lock screen and not in AppLock mode
+    if (!showLockScreen && !isAppLockMode) {
+      checkPendingLockedApp();
     }
+  }
 
-    appStateRef.current = nextAppState;
-  };
+  appStateRef.current = nextAppState;
+};
 
   const handleBackPress = () => {
     if (showLockScreen) {
@@ -440,6 +455,7 @@ const LockScreenManager = ({
         onUnlock={handleUnlock}
         onClose={closeLockScreen}
         onForgotPin={handleForgotPin}
+        biometricsEnabled={biometricsEnabled}
       />
     </View>
   );
