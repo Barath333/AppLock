@@ -55,6 +55,7 @@ const HomeScreen = () => {
   const [hasCheckedSecurityQuestion, setHasCheckedSecurityQuestion] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchAnimation] = useState(new Animated.Value(0));
+  const [shouldAutoFocus, setShouldAutoFocus] = useState(false); // NEW: Control autoFocus
 
   useEffect(() => {
     if (searchFocused) {
@@ -63,8 +64,14 @@ const HomeScreen = () => {
         duration: 300,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: false,
-      }).start();
+      }).start(() => {
+        // Only auto-focus after animation completes
+        setTimeout(() => {
+          setShouldAutoFocus(true);
+        }, 100);
+      });
     } else {
+      setShouldAutoFocus(false);
       Animated.timing(searchAnimation, {
         toValue: 0,
         duration: 300,
@@ -81,13 +88,71 @@ const HomeScreen = () => {
       loadLockedApps();
       loadInstalledApps();
       checkSecurityQuestion();
+      
+      // IMPORTANT: Dismiss keyboard when screen is focused
+      Keyboard.dismiss();
+      
       return () => {
         // Reset search when leaving screen
         setSearchFocused(false);
+        setShouldAutoFocus(false);
         Keyboard.dismiss();
       };
     }, []),
   );
+
+  useEffect(() => {
+    console.log('🏠 HomeScreen mounted');
+    loadSettings();
+    loadInstalledApps();
+    loadLockedApps();
+    
+    // Dismiss any keyboard when component mounts
+    Keyboard.dismiss();
+    
+    return () => {
+      // Clean up when component unmounts
+      Keyboard.dismiss();
+    };
+  }, []);
+
+  // Add keyboard listener to handle when keyboard is shown/hidden
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      () => {
+        console.log('⌨️ Keyboard shown');
+      }
+    );
+    
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => {
+        console.log('⌨️ Keyboard hidden');
+        // If search is focused but keyboard is hidden, maybe user clicked back
+        if (searchFocused && searchQuery === '') {
+          setSearchFocused(false);
+        }
+      }
+    );
+
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, [searchFocused, searchQuery]);
+
+  useEffect(() => {
+    if (searchQuery === '') {
+      setFilteredApps(apps);
+    } else {
+      setFilteredApps(
+        apps.filter(app =>
+          app.name.toLowerCase().includes(searchQuery.toLowerCase()),
+        ),
+      );
+    }
+  }, [searchQuery, apps]);
 
   const checkSecurityQuestion = async () => {
     try {
@@ -107,25 +172,6 @@ const HomeScreen = () => {
       console.error('Error checking security question:', error);
     }
   };
-
-  useEffect(() => {
-    console.log('🏠 HomeScreen mounted');
-    loadSettings();
-    loadInstalledApps();
-    loadLockedApps();
-  }, []);
-
-  useEffect(() => {
-    if (searchQuery === '') {
-      setFilteredApps(apps);
-    } else {
-      setFilteredApps(
-        apps.filter(app =>
-          app.name.toLowerCase().includes(searchQuery.toLowerCase()),
-        ),
-      );
-    }
-  }, [searchQuery, apps]);
 
   const loadSettings = async () => {
     try {
@@ -516,6 +562,8 @@ const HomeScreen = () => {
       <Animated.ScrollView
         style={[styles.content, {opacity: contentOpacity}]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled" // Add this
+        keyboardDismissMode="on-drag" // Add this
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
@@ -632,7 +680,12 @@ const HomeScreen = () => {
               inputStyle={styles.searchInput}
               placeholderTextColor="#888"
               elevation={0}
-              onFocus={() => setSearchFocused(true)}
+              onFocus={() => {
+                console.log('🔍 Search bar focused');
+                setSearchFocused(true);
+              }}
+              autoFocus={false} // Explicitly set to false
+              blurOnSubmit={false}
             />
           </Card.Content>
         </Card>
@@ -706,112 +759,118 @@ const HomeScreen = () => {
         opacity: searchContainerOpacity,
       }
     ]}>
-      <View style={styles.searchHeader}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => {
-            setSearchFocused(false);
-            Keyboard.dismiss();
-          }}
-        >
-          <Icon name="arrow-left" size={24} color="#1E88E5" />
-        </TouchableOpacity>
-        
-        <View style={styles.searchBarContainer}>
-          <Searchbar
-            placeholder={t('home.search_placeholder')}
-            onChangeText={setSearchQuery}
-            value={searchQuery}
-            style={styles.searchBarFullscreen}
-            iconColor="#1E88E5"
-            inputStyle={styles.searchInputFullscreen}
-            placeholderTextColor="#888"
-            elevation={0}
-            autoFocus={true}
-            onBlur={() => {
-              if (searchQuery === '') {
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View style={{flex: 1}}>
+          <View style={styles.searchHeader}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => {
                 setSearchFocused(false);
-              }
-            }}
-          />
-        </View>
-      </View>
-
-      {searchQuery ? (
-        <View style={styles.searchResultsContainer}>
-          <View style={styles.searchResultsHeader}>
-            <Text style={styles.searchResultsTitle}>
-              {t('home.search_results')}
-            </Text>
-            <Text style={styles.searchResultsCount}>
-              {filteredApps.length} {t('home.apps_found')}
-            </Text>
+                setShouldAutoFocus(false);
+                Keyboard.dismiss();
+              }}
+            >
+              <Icon name="arrow-left" size={24} color="#1E88E5" />
+            </TouchableOpacity>
+            
+            <View style={styles.searchBarContainer}>
+              <Searchbar
+                placeholder={t('home.search_placeholder')}
+                onChangeText={setSearchQuery}
+                value={searchQuery}
+                style={styles.searchBarFullscreen}
+                iconColor="#1E88E5"
+                inputStyle={styles.searchInputFullscreen}
+                placeholderTextColor="#888"
+                elevation={0}
+                autoFocus={shouldAutoFocus} // Controlled by state
+                onBlur={() => {
+                  if (searchQuery === '') {
+                    setSearchFocused(false);
+                    setShouldAutoFocus(false);
+                  }
+                }}
+              />
+            </View>
           </View>
-          
-          {filteredApps.length > 0 ? (
-            <FlatList
-              data={filteredApps}
-              renderItem={renderAppItem}
-              keyExtractor={item => item.id}
-              style={styles.searchResultsList}
-              showsVerticalScrollIndicator={true}
-              initialNumToRender={20}
-              maxToRenderPerBatch={20}
-              windowSize={10}
-              keyboardShouldPersistTaps="handled"
-              ItemSeparatorComponent={() => <View style={styles.separator} />}
-              contentContainerStyle={styles.searchResultsContent}
-            />
+
+          {searchQuery ? (
+            <View style={styles.searchResultsContainer}>
+              <View style={styles.searchResultsHeader}>
+                <Text style={styles.searchResultsTitle}>
+                  {t('home.search_results')}
+                </Text>
+                <Text style={styles.searchResultsCount}>
+                  {filteredApps.length} {t('home.apps_found')}
+                </Text>
+              </View>
+              
+              {filteredApps.length > 0 ? (
+                <FlatList
+                  data={filteredApps}
+                  renderItem={renderAppItem}
+                  keyExtractor={item => item.id}
+                  style={styles.searchResultsList}
+                  showsVerticalScrollIndicator={true}
+                  initialNumToRender={20}
+                  maxToRenderPerBatch={20}
+                  windowSize={10}
+                  keyboardShouldPersistTaps="handled"
+                  ItemSeparatorComponent={() => <View style={styles.separator} />}
+                  contentContainerStyle={styles.searchResultsContent}
+                />
+              ) : (
+                <View style={styles.searchEmptyContainer}>
+                  <Icon name="magnify-close" size={64} color="#BDBDBD" />
+                  <Text style={styles.searchEmptyTitle}>
+                    {t('home.no_search_results')}
+                  </Text>
+                  <Text style={styles.searchEmptyText}>
+                    {t('home.no_matching_apps')}
+                  </Text>
+                  <Button
+                    mode="text"
+                    onPress={() => setSearchQuery('')}
+                    style={styles.clearSearchButton}
+                    labelStyle={styles.clearSearchLabel}>
+                    {t('home.clear_search')}
+                  </Button>
+                </View>
+              )}
+            </View>
           ) : (
-            <View style={styles.searchEmptyContainer}>
-              <Icon name="magnify-close" size={64} color="#BDBDBD" />
-              <Text style={styles.searchEmptyTitle}>
-                {t('home.no_search_results')}
+            <View style={styles.searchSuggestionsContainer}>
+              <Text style={styles.suggestionsTitle}>
+                {t('home.search_suggestions')}
               </Text>
-              <Text style={styles.searchEmptyText}>
-                {t('home.no_matching_apps')}
-              </Text>
-              <Button
-                mode="text"
-                onPress={() => setSearchQuery('')}
-                style={styles.clearSearchButton}
-                labelStyle={styles.clearSearchLabel}>
-                {t('home.clear_search')}
-              </Button>
+              <View style={styles.suggestionsGrid}>
+                {apps.slice(0, 6).map(app => (
+                  <TouchableOpacity
+                    key={app.id}
+                    style={styles.suggestionItem}
+                    onPress={() => {
+                      setSearchQuery(app.name);
+                    }}
+                  >
+                    <View style={styles.suggestionIconContainer}>
+                      {app.icon ? (
+                        <Image source={{uri: app.icon}} style={styles.suggestionIcon} />
+                      ) : (
+                        <View style={styles.suggestionPlaceholderIcon}>
+                          <Icon name="android" size={16} color="#666" />
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.suggestionName} numberOfLines={1}>
+                      {app.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
           )}
         </View>
-      ) : (
-        <View style={styles.searchSuggestionsContainer}>
-          <Text style={styles.suggestionsTitle}>
-            {t('home.search_suggestions')}
-          </Text>
-          <View style={styles.suggestionsGrid}>
-            {apps.slice(0, 6).map(app => (
-              <TouchableOpacity
-                key={app.id}
-                style={styles.suggestionItem}
-                onPress={() => {
-                  setSearchQuery(app.name);
-                }}
-              >
-                <View style={styles.suggestionIconContainer}>
-                  {app.icon ? (
-                    <Image source={{uri: app.icon}} style={styles.suggestionIcon} />
-                  ) : (
-                    <View style={styles.suggestionPlaceholderIcon}>
-                      <Icon name="android" size={16} color="#666" />
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.suggestionName} numberOfLines={1}>
-                  {app.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      )}
+      </TouchableWithoutFeedback>
     </Animated.View>
   );
 
@@ -896,7 +955,7 @@ const styles = StyleSheet.create({
   },
   searchBarContainer: {
     flex: 1,
-    marginTop:10
+    marginTop: 10
   },
   searchBarFullscreen: {
     backgroundColor: '#F5F5F5',
