@@ -61,7 +61,11 @@
     "this_app": "هذا التطبيق",
     "security_question_required": "سؤال الأمان مطلوب",
     "security_question_mandatory_desc": "تحتاج إلى إعداد سؤال أمان قبل استخدام التطبيق. سيتم استخدام هذا إذا نسيت الرمز السري.",
-    "set_security_question": "إعداد سؤال الأمان"
+    "set_security_question": "إعداد سؤال الأمان",
+      "search_results": "نتائج البحث",
+    "apps_found": "تم العثور على تطبيقات",
+    "no_matching_apps": "لم يتم العثور على تطبيقات مطابقة",
+    "search_suggestions": "اقتراحات البحث"
   },
   "setup": {
     "title": "إعداد الأمان الخاص بك",
@@ -237,7 +241,12 @@
     "clear_title": "مسح سؤال الأمان",
     "clear_confirm": "هل أنت متأكد أنك تريد مسح سؤال الأمان؟",
     "clear_button": "مسح",
-    "clear_success": "تم مسح سؤال الأمان بنجاح"
+    "clear_success": "تم مسح سؤال الأمان بنجاح",
+       "update_success": "تم تحديث سؤال الأمان بنجاح",
+    "current_answer": "الإجابة الحالية",
+    "verify_instructions": "يرجى إدخال إجابتك الحالية للتحقق من هويتك",
+    "verify_and_continue": "تحقق ومتابعة",
+    "select_new_question": "اختر سؤال أمان جديد"
   },
   "forgot_pin": {
     "title": "نسيت الرقم السري",
@@ -327,7 +336,9 @@
     "load_security_question_failed": "فشل تحميل سؤال الأمان",
     "pin_mismatch": "الرموز السريّة غير متطابقة",
     "reset_failed_title": "خطأ",
-    "reset_failed_message": "فشل في إعادة تعيين التطبيق. يرجى إعادة تشغيل التطبيق."
+    "reset_failed_message": "فشل في إعادة تعيين التطبيق. يرجى إعادة تشغيل التطبيق.",
+      "enter_current_answer": "يرجى إدخال إجابتك الحالية"
+   
   },
   "alerts": {
     "success": "نجاح",

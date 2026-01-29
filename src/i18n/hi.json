@@ -61,7 +61,11 @@
     "this_app": "यह ऐप",
     "security_question_required": "सुरक्षा प्रश्न आवश्यक",
     "security_question_mandatory_desc": "ऐप का उपयोग करने से पहले आपको एक सुरक्षा प्रश्न सेट करना होगा। इसका उपयोग तब किया जाएगा जब आप अपना पिन भूल जाते हैं।",
-    "set_security_question": "सुरक्षा प्रश्न सेट करें"
+    "set_security_question": "सुरक्षा प्रश्न सेट करें",
+       "search_results": "खोज परिणाम",
+    "apps_found": "ऐप्स मिले",
+    "no_matching_apps": "कोई मिलान ऐप्स नहीं मिले",
+    "search_suggestions": "खोज सुझाव"
   },
   "setup": {
     "title": "अपनी सुरक्षा सेट करें",
@@ -237,7 +241,12 @@
     "clear_title": "सुरक्षा प्रश्न साफ़ करें",
     "clear_confirm": "क्या आप वाकई अपना सुरक्षा प्रश्न हटाना चाहते हैं?",
     "clear_button": "साफ़ करें",
-    "clear_success": "सुरक्षा प्रश्न हटा दिया गया"
+    "clear_success": "सुरक्षा प्रश्न हटा दिया गया",
+        "update_success": "सुरक्षा प्रश्न सफलतापूर्वक अपडेट किया गया",
+    "current_answer": "वर्तमान उत्तर",
+    "verify_instructions": "कृपया अपनी पहचान सत्यापित करने के लिए अपना वर्तमान उत्तर दर्ज करें",
+    "verify_and_continue": "सत्यापित करें और जारी रखें",
+    "select_new_question": "नया सुरक्षा प्रश्न चुनें"
   },
   "forgot_pin": {
     "title": "पिन भूल गए",
@@ -327,7 +336,8 @@
     "load_security_question_failed": "सुरक्षा प्रश्न लोड करने में विफल",
     "pin_mismatch": "पिन मेल नहीं खाते",
     "reset_failed_title": "त्रुटि",
-    "reset_failed_message": "ऐप रीसेट करने में विफल। कृपया एप्लिकेशन पुनरारंभ करें।"
+    "reset_failed_message": "ऐप रीसेट करने में विफल। कृपया एप्लिकेशन पुनरारंभ करें।",
+        "enter_current_answer": "कृपया अपना वर्तमान उत्तर दर्ज करें"
   },
   "alerts": {
     "success": "सफलता",

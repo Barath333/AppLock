@@ -61,7 +61,11 @@
     "this_app": "Este Aplicativo",
     "security_question_required": "Pergunta de Segurança Necessária",
     "security_question_mandatory_desc": "Você precisa configurar uma pergunta de segurança antes de usar o aplicativo. Isso será usado se você esquecer seu PIN.",
-    "set_security_question": "Configurar Pergunta de Segurança"
+    "set_security_question": "Configurar Pergunta de Segurança",
+        "search_results": "Resultados da Pesquisa",
+    "apps_found": "aplicativos encontrados",
+    "no_matching_apps": "Nenhum aplicativo correspondente encontrado",
+    "search_suggestions": "Sugestões de Pesquisa"
   },
   "setup": {
     "title": "Configurar segurança",
@@ -237,7 +241,12 @@
     "clear_title": "Limpar pergunta de segurança",
     "clear_confirm": "Tem certeza de que deseja limpar sua pergunta de segurança?",
     "clear_button": "Limpar",
-    "clear_success": "A pergunta de segurança foi apagada"
+    "clear_success": "A pergunta de segurança foi apagada",
+     "update_success": "Pergunta de segurança atualizada com sucesso",
+    "current_answer": "Resposta Atual",
+    "verify_instructions": "Digite sua resposta atual para verificar sua identidade",
+    "verify_and_continue": "Verificar e Continuar",
+    "select_new_question": "Selecionar Nova Pergunta de Segurança"
   },
   "forgot_pin": {
     "title": "Esqueceu o PIN",
@@ -327,7 +336,8 @@
     "load_security_question_failed": "Falha ao carregar pergunta de segurança",
     "pin_mismatch": "Os PINs não correspondem",
     "reset_failed_title": "Erro",
-    "reset_failed_message": "Falha ao redefinir o aplicativo. Por favor, reinicie o aplicativo."
+    "reset_failed_message": "Falha ao redefinir o aplicativo. Por favor, reinicie o aplicativo.",
+      "enter_current_answer": "Por favor, insira sua resposta atual"
   },
   "alerts": {
     "success": "Sucesso",

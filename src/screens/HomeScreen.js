@@ -10,6 +10,11 @@ import {
   Dimensions,
   Image,
   LogBox,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import {
   Searchbar,
@@ -17,6 +22,8 @@ import {
   Card,
   Button,
   Switch as PaperSwitch,
+  Modal,
+  Portal,
 } from 'react-native-paper';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import {useTranslation} from 'react-i18next';
@@ -25,10 +32,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useAlert} from '../contexts/AlertContext';
 import {RefreshControl, ScrollView} from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import {Modal, TouchableWithoutFeedback, Keyboard} from 'react-native';
 
 const {AppListModule, AppLockModule} = NativeModules;
-const {width} = Dimensions.get('window');
+const {width, height} = Dimensions.get('window');
 
 LogBox.ignoreLogs(['new NativeEventEmitter']);
 
@@ -46,42 +52,61 @@ const HomeScreen = () => {
   const [autoLockNewApps, setAutoLockNewApps] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showSecurityQuestionModal, setShowSecurityQuestionModal] = useState(false);
-const [hasCheckedSecurityQuestion, setHasCheckedSecurityQuestion] = useState(false);
+  const [hasCheckedSecurityQuestion, setHasCheckedSecurityQuestion] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchAnimation] = useState(new Animated.Value(0));
 
-
-useFocusEffect(
-  React.useCallback(() => {
-    console.log('🏠 HomeScreen focused - refreshing data');
-    loadSettings();
-    loadLockedApps();
-    loadInstalledApps();
-    checkSecurityQuestion();
-    return () => {};
-  }, []),
-);
-
-
-const checkSecurityQuestion = async () => {
-  try {
-    if (hasCheckedSecurityQuestion) return;
-    
-    const securityQuestion = await AsyncStorage.getItem('security_question');
-    const securityAnswer = await AsyncStorage.getItem('security_answer');
-    
-    if (!securityQuestion || !securityAnswer) {
-      console.log('⚠️ Security question not set - showing mandatory modal');
-      // Show modal after a short delay to ensure everything is loaded
-      setTimeout(() => {
-        setShowSecurityQuestionModal(true);
-      }, 500);
+  useEffect(() => {
+    if (searchFocused) {
+      Animated.timing(searchAnimation, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
+    } else {
+      Animated.timing(searchAnimation, {
+        toValue: 0,
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
     }
-    setHasCheckedSecurityQuestion(true);
-  } catch (error) {
-    console.error('Error checking security question:', error);
-  }
-};
+  }, [searchFocused]);
 
- 
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('🏠 HomeScreen focused - refreshing data');
+      loadSettings();
+      loadLockedApps();
+      loadInstalledApps();
+      checkSecurityQuestion();
+      return () => {
+        // Reset search when leaving screen
+        setSearchFocused(false);
+        Keyboard.dismiss();
+      };
+    }, []),
+  );
+
+  const checkSecurityQuestion = async () => {
+    try {
+      if (hasCheckedSecurityQuestion) return;
+      
+      const securityQuestion = await AsyncStorage.getItem('security_question');
+      const securityAnswer = await AsyncStorage.getItem('security_answer');
+      
+      if (!securityQuestion || !securityAnswer) {
+        console.log('⚠️ Security question not set - showing mandatory modal');
+        setTimeout(() => {
+          setShowSecurityQuestionModal(true);
+        }, 500);
+      }
+      setHasCheckedSecurityQuestion(true);
+    } catch (error) {
+      console.error('Error checking security question:', error);
+    }
+  };
 
   useEffect(() => {
     console.log('🏠 HomeScreen mounted');
@@ -416,9 +441,6 @@ const checkSecurityQuestion = async () => {
               <Text style={styles.ourAppBadge}> ({t('home.this_app')})</Text>
             )}
           </Text>
-          {/* <Text style={styles.packageName} numberOfLines={1}>
-            {item.packageName}
-          </Text> */}
           {item.locked && (
             <View style={styles.lockedBadge}>
               <Icon name="lock" size={12} color="#1E88E5" />
@@ -441,35 +463,58 @@ const checkSecurityQuestion = async () => {
 
   const lockedAppsCount = Array.from(lockedApps).length;
 
-  return (
-    <View style={styles.container}>
-      <Appbar.Header style={[styles.header, {height: 48}]}>
-        <Appbar.Content
-          title={t('home.title')}
-          titleStyle={styles.headerTitle}
-        />
-        <Appbar.Action
-          icon="cog"
-          onPress={() => {
-            console.log('⚙️ Settings button pressed');
-            navigation.navigate('Settings');
-          }}
-          color="#1E88E5"
-        />
-        <Appbar.Action
-          icon="refresh"
-          onPress={() => {
-            console.log('🔄 Refresh button pressed');
-            loadInstalledApps();
-            loadLockedApps();
-          }}
-          color="#1E88E5"
-          disabled={isRefreshing}
-        />
-      </Appbar.Header>
+  // Interpolated styles for animation
+  const headerOpacity = searchAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
+  });
 
-      <ScrollView
-        style={styles.content}
+  const contentOpacity = searchAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
+  });
+
+  const searchContainerHeight = searchAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, height - 100],
+  });
+
+  const searchContainerOpacity = searchAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  });
+
+  const renderNormalScreen = () => (
+    <View style={styles.container}>
+      <Animated.View style={{opacity: headerOpacity}}>
+        <Appbar.Header style={[styles.header, {height: 48}]}>
+          <Appbar.Content
+            title={t('home.title')}
+            titleStyle={styles.headerTitle}
+          />
+          <Appbar.Action
+            icon="cog"
+            onPress={() => {
+              console.log('⚙️ Settings button pressed');
+              navigation.navigate('Settings');
+            }}
+            color="#1E88E5"
+          />
+          <Appbar.Action
+            icon="refresh"
+            onPress={() => {
+              console.log('🔄 Refresh button pressed');
+              loadInstalledApps();
+              loadLockedApps();
+            }}
+            color="#1E88E5"
+            disabled={isRefreshing}
+          />
+        </Appbar.Header>
+      </Animated.View>
+
+      <Animated.ScrollView
+        style={[styles.content, {opacity: contentOpacity}]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -587,6 +632,7 @@ const checkSecurityQuestion = async () => {
               inputStyle={styles.searchInput}
               placeholderTextColor="#888"
               elevation={0}
+              onFocus={() => setSearchFocused(true)}
             />
           </Card.Content>
         </Card>
@@ -605,25 +651,27 @@ const checkSecurityQuestion = async () => {
             </View>
 
             {filteredApps.length > 0 ? (
-              <FlatList
-                data={filteredApps}
-                renderItem={renderAppItem}
-                keyExtractor={item => item.id}
-                style={styles.appList}
-                scrollEnabled={true}
-                showsVerticalScrollIndicator={true}
-                nestedScrollEnabled={true}
-                initialNumToRender={20} // Add this for better performance
-                maxToRenderPerBatch={20} // Add this
-                windowSize={10} // Add this
-                removeClippedSubviews={false} // Add this
-                getItemLayout={(data, index) => ({
-                  length: 80, // Approximate height of each item
-                  offset: 80 * index,
-                  index,
-                })}
-                ItemSeparatorComponent={() => <View style={styles.separator} />}
-              />
+              <View style={styles.appListContainer}>
+                <FlatList
+                  data={filteredApps}
+                  renderItem={renderAppItem}
+                  keyExtractor={item => item.id}
+                  style={styles.appList}
+                  scrollEnabled={true}
+                  showsVerticalScrollIndicator={true}
+                  nestedScrollEnabled={true}
+                  initialNumToRender={20}
+                  maxToRenderPerBatch={20}
+                  windowSize={10}
+                  removeClippedSubviews={false}
+                  getItemLayout={(data, index) => ({
+                    length: 80,
+                    offset: 80 * index,
+                    index,
+                  })}
+                  ItemSeparatorComponent={() => <View style={styles.separator} />}
+                />
+              </View>
             ) : (
               <View style={styles.emptyContainer}>
                 <Icon name="magnify" size={64} color="#BDBDBD" />
@@ -646,53 +694,317 @@ const checkSecurityQuestion = async () => {
             )}
           </Card.Content>
         </Card>
-        <Modal
-  visible={showSecurityQuestionModal}
-  animationType="slide"
-  transparent={true}
-  onRequestClose={() => {}} // Prevent closing by back button
->
-  <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-    <View style={styles.modalOverlay}>
-      <View style={styles.modalContent}>
-        <View style={styles.modalHeader}>
-          <Icon name="shield-alert" size={32} color="#1E88E5" />
-          <Text style={styles.modalTitle}>
-            {t('home.security_question_required')}
-          </Text>
-        </View>
+      </Animated.ScrollView>
+    </View>
+  );
+
+  const renderSearchScreen = () => (
+    <Animated.View style={[
+      styles.searchFullscreenContainer,
+      {
+        height: searchContainerHeight,
+        opacity: searchContainerOpacity,
+      }
+    ]}>
+      <View style={styles.searchHeader}>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => {
+            setSearchFocused(false);
+            Keyboard.dismiss();
+          }}
+        >
+          <Icon name="arrow-left" size={24} color="#1E88E5" />
+        </TouchableOpacity>
         
-        <Text style={styles.modalDescription}>
-          {t('home.security_question_mandatory_desc')}
-        </Text>
-        
-        <View style={styles.modalButtons}>
-          <Button
-            mode="contained"
-            onPress={() => {
-              setShowSecurityQuestionModal(false);
-              navigation.navigate('SecurityQuestion', { mandatory: true });
+        <View style={styles.searchBarContainer}>
+          <Searchbar
+            placeholder={t('home.search_placeholder')}
+            onChangeText={setSearchQuery}
+            value={searchQuery}
+            style={styles.searchBarFullscreen}
+            iconColor="#1E88E5"
+            inputStyle={styles.searchInputFullscreen}
+            placeholderTextColor="#888"
+            elevation={0}
+            autoFocus={true}
+            onBlur={() => {
+              if (searchQuery === '') {
+                setSearchFocused(false);
+              }
             }}
-            style={styles.modalButton}
-            contentStyle={styles.modalButtonContent}
-          >
-            {t('home.set_security_question')}
-          </Button>
+          />
         </View>
       </View>
-    </View>
-  </TouchableWithoutFeedback>
-</Modal>
-      </ScrollView>
+
+      {searchQuery ? (
+        <View style={styles.searchResultsContainer}>
+          <View style={styles.searchResultsHeader}>
+            <Text style={styles.searchResultsTitle}>
+              {t('home.search_results')}
+            </Text>
+            <Text style={styles.searchResultsCount}>
+              {filteredApps.length} {t('home.apps_found')}
+            </Text>
+          </View>
+          
+          {filteredApps.length > 0 ? (
+            <FlatList
+              data={filteredApps}
+              renderItem={renderAppItem}
+              keyExtractor={item => item.id}
+              style={styles.searchResultsList}
+              showsVerticalScrollIndicator={true}
+              initialNumToRender={20}
+              maxToRenderPerBatch={20}
+              windowSize={10}
+              keyboardShouldPersistTaps="handled"
+              ItemSeparatorComponent={() => <View style={styles.separator} />}
+              contentContainerStyle={styles.searchResultsContent}
+            />
+          ) : (
+            <View style={styles.searchEmptyContainer}>
+              <Icon name="magnify-close" size={64} color="#BDBDBD" />
+              <Text style={styles.searchEmptyTitle}>
+                {t('home.no_search_results')}
+              </Text>
+              <Text style={styles.searchEmptyText}>
+                {t('home.no_matching_apps')}
+              </Text>
+              <Button
+                mode="text"
+                onPress={() => setSearchQuery('')}
+                style={styles.clearSearchButton}
+                labelStyle={styles.clearSearchLabel}>
+                {t('home.clear_search')}
+              </Button>
+            </View>
+          )}
+        </View>
+      ) : (
+        <View style={styles.searchSuggestionsContainer}>
+          <Text style={styles.suggestionsTitle}>
+            {t('home.search_suggestions')}
+          </Text>
+          <View style={styles.suggestionsGrid}>
+            {apps.slice(0, 6).map(app => (
+              <TouchableOpacity
+                key={app.id}
+                style={styles.suggestionItem}
+                onPress={() => {
+                  setSearchQuery(app.name);
+                }}
+              >
+                <View style={styles.suggestionIconContainer}>
+                  {app.icon ? (
+                    <Image source={{uri: app.icon}} style={styles.suggestionIcon} />
+                  ) : (
+                    <View style={styles.suggestionPlaceholderIcon}>
+                      <Icon name="android" size={16} color="#666" />
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.suggestionName} numberOfLines={1}>
+                  {app.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+    </Animated.View>
+  );
+
+  return (
+    <View style={styles.mainContainer}>
+      {renderNormalScreen()}
+      {renderSearchScreen()}
+
+      <Portal>
+        <Modal
+          visible={showSecurityQuestionModal}
+          onDismiss={() => {}}
+          contentContainerStyle={styles.modalContainer}
+          dismissable={false}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Icon name="shield-alert" size={32} color="#1E88E5" />
+              <Text style={styles.modalTitle}>
+                {t('home.security_question_required')}
+              </Text>
+            </View>
+            
+            <Text style={styles.modalDescription}>
+              {t('home.security_question_mandatory_desc')}
+            </Text>
+            
+            <View style={styles.modalButtons}>
+              <Button
+                mode="contained"
+                onPress={() => {
+                  setShowSecurityQuestionModal(false);
+                  navigation.navigate('SecurityQuestion', { mandatory: true });
+                }}
+                style={styles.modalButton}
+                contentStyle={styles.modalButtonContent}>
+                {t('home.set_security_question')}
+              </Button>
+            </View>
+          </View>
+        </Modal>
+      </Portal>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  mainContainer: {
     flex: 1,
     backgroundColor: '#F8F9FA',
   },
+  container: {
+    flex: 1,
+  },
+  searchFullscreenContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: -2},
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    overflow: 'hidden',
+  },
+  searchHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+    backgroundColor: '#FFFFFF',
+  },
+  backButton: {
+    marginRight: 12,
+    padding: 4,
+  },
+  searchBarContainer: {
+    flex: 1,
+    marginTop:10
+  },
+  searchBarFullscreen: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    elevation: 0,
+    height: 48,
+  },
+  searchInputFullscreen: {
+    color: '#333',
+    fontSize: 16,
+  },
+  searchResultsContainer: {
+    flex: 1,
+  },
+  searchResultsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  searchResultsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  searchResultsCount: {
+    fontSize: 14,
+    color: '#666',
+  },
+  searchResultsList: {
+    flex: 1,
+  },
+  searchResultsContent: {
+    paddingBottom: 20,
+  },
+  searchEmptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
+  searchEmptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  searchEmptyText: {
+    fontSize: 14,
+    color: '#888',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  searchSuggestionsContainer: {
+    flex: 1,
+    padding: 20,
+  },
+  suggestionsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 16,
+  },
+  suggestionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  suggestionItem: {
+    width: '31%',
+    alignItems: 'center',
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+  },
+  suggestionIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  suggestionIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+  },
+  suggestionPlaceholderIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  suggestionName: {
+    fontSize: 12,
+    color: '#333',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  // Keep all existing styles from before...
   header: {
     backgroundColor: '#FFFFFF',
     elevation: 2,
@@ -733,38 +1045,53 @@ const styles = StyleSheet.create({
     color: '#E65100',
     lineHeight: 18,
   },
-  statsRow: {
+  statsContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
+    justifyContent: 'space-between',
+    marginHorizontal: 16,
     marginBottom: 16,
+    marginTop: 12,
     gap: 12,
-    marginTop: 20,
   },
-  statCard: {
+  statItem: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     elevation: 2,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
   },
-  lockedCard: {
-    backgroundColor: '#E3F2FD',
-  },
-  totalCard: {
-    backgroundColor: '#E8F5E9',
-  },
-  statCardContent: {
+  statIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 20,
+    marginRight: 12,
+  },
+  lockedStat: {
+    backgroundColor: '#1E88E5',
+  },
+  totalStat: {
+    backgroundColor: '#43A047',
+  },
+  statText: {
+    flex: 1,
   },
   statNumber: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: '#1E88E5',
-    marginTop: 8,
+    color: '#333',
   },
   statLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
+    fontSize: 13,
+    color: '#777',
     fontWeight: '500',
   },
   settingsCard: {
@@ -876,8 +1203,11 @@ const styles = StyleSheet.create({
     color: '#BDBDBD',
     fontWeight: '500',
   },
+  appListContainer: {
+    height: 400,
+  },
   appList: {
-    maxHeight: 400,
+    flex: 1,
   },
   appItem: {
     flexDirection: 'row',
@@ -919,11 +1249,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333',
     marginBottom: 2,
-  },
-  packageName: {
-    fontSize: 12,
-    color: '#888',
-    marginBottom: 4,
   },
   ourAppBadge: {
     fontSize: 12,
@@ -976,106 +1301,52 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginHorizontal: 16,
-    marginBottom: 16,
-    marginTop: 12,
-    gap: 12,
-  },
-  statItem: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+  modalContainer: {
+    backgroundColor: 'white',
     borderRadius: 16,
-    elevation: 2,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    padding: 24,
+    margin: 20,
+    elevation: 5,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
   },
-  statIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    justifyContent: 'center',
+  modalContent: {
     alignItems: 'center',
-    marginRight: 12,
   },
-  lockedStat: {
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    justifyContent: 'center',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1E88E5',
+    marginLeft: 12,
+  },
+  modalDescription: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  modalButton: {
+    borderRadius: 8,
     backgroundColor: '#1E88E5',
-  },
-  totalStat: {
-    backgroundColor: '#43A047',
-  },
-  statText: {
     flex: 1,
   },
-  statNumber: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#333',
+  modalButtonContent: {
+    paddingVertical: 8,
   },
-  statLabel: {
-    fontSize: 13,
-    color: '#777',
-    fontWeight: '500',
-  },
-  // Add to HomeScreen.js styles
-modalOverlay: {
-  flex: 1,
-  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  justifyContent: 'center',
-  alignItems: 'center',
-  padding: 20,
-},
-modalContent: {
-  backgroundColor: 'white',
-  borderRadius: 16,
-  padding: 24,
-  width: '100%',
-  maxWidth: 400,
-  elevation: 5,
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.25,
-  shadowRadius: 8,
-},
-modalHeader: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  marginBottom: 16,
-  justifyContent: 'center',
-},
-modalTitle: {
-  fontSize: 20,
-  fontWeight: 'bold',
-  color: '#1E88E5',
-  marginLeft: 12,
-},
-modalDescription: {
-  fontSize: 16,
-  color: '#666',
-  textAlign: 'center',
-  marginBottom: 24,
-  lineHeight: 22,
-},
-modalButtons: {
-  flexDirection: 'row',
-  justifyContent: 'center',
-},
-modalButton: {
-  borderRadius: 8,
-  backgroundColor: '#1E88E5',
-  minWidth: 200,
-},
-modalButtonContent: {
-  paddingVertical: 8,
-},
 });
 
 export default HomeScreen;

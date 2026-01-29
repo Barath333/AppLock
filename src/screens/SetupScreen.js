@@ -1,6 +1,6 @@
 import React, {useState, useRef} from 'react';
 import {View, Text, StyleSheet, Animated, Easing} from 'react-native';
-import {Button, TextInput} from 'react-native-paper';
+import {Button, TextInput, ActivityIndicator} from 'react-native-paper';
 import {useNavigation} from '@react-navigation/native';
 import {useTranslation} from 'react-i18next';
 import * as Keychain from 'react-native-keychain';
@@ -18,6 +18,7 @@ const SetupScreen = () => {
   const [confirmPin, setConfirmPin] = useState('');
   const [showPin, setShowPin] = useState(false);
   const [pinStrength, setPinStrength] = useState({valid: true, message: ''});
+  const [isLoading, setIsLoading] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
 
@@ -64,32 +65,46 @@ const SetupScreen = () => {
       return;
     }
 
+    setIsLoading(true);
+
     try {
-      console.log('💾 Saving PIN to Keychain...');
-      const result = await Keychain.setGenericPassword('applock_user', pin, {
+      console.log('💾 Starting PIN setup process...');
+      
+      // Save PIN to Keychain
+      await Keychain.setGenericPassword('applock_user', pin, {
         service: 'applock_service',
         accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
       });
 
-      console.log('✅ PIN saved successfully:', result);
-
+      console.log('✅ PIN saved to Keychain');
+      
+      // Save setup status
       await AsyncStorage.setItem('setupCompleted', 'true');
+
       console.log('✅ Setup marked as completed');
-
-      const credentials = await Keychain.getGenericPassword({
-        service: 'applock_service',
-      });
-
-      console.log('🔑 Verified stored PIN:', !!credentials);
-
-      if (credentials && credentials.password === pin) {
-        navigation.navigate('Main', {screen: 'Home'});
-      } else {
-        showAlert(t('alerts.error'), t('errors.verification_failed'), 'error');
-      }
+      
+      // Navigate immediately
+      console.log('🚀 Navigation to Home screen');
+      navigation.navigate('Main', {screen: 'Home'});
+      
     } catch (error) {
-      console.error('❌ Error saving PIN:', error);
-      showAlert(t('alerts.error'), t('errors.save_failed'), 'error');
+      console.error('❌ Error in setup process:', error);
+      setIsLoading(false);
+      showAlert(
+        t('alerts.error'), 
+        t('errors.save_failed'), 
+        'error',
+        [
+          {
+            text: t('common.retry'),
+            onPress: () => {},
+          },
+          {
+            text: t('common.cancel'),
+            onPress: () => navigation.goBack(),
+          },
+        ]
+      );
     }
   };
 
@@ -101,68 +116,119 @@ const SetupScreen = () => {
           {opacity: fadeAnim, transform: [{translateY: slideAnim}]},
         ]}>
         <View style={styles.iconContainer}>
-          <Icon name="lock-plus" size={60} color="#1E88E5" />
+          {isLoading ? (
+            <View style={styles.loadingIconContainer}>
+              <ActivityIndicator size="large" color="#1E88E5" />
+              <Icon 
+                name="shield-check" 
+                size={24} 
+                color="#1E88E5" 
+                style={styles.shieldOverlay}
+              />
+            </View>
+          ) : (
+            <Icon name="lock-plus" size={60} color="#1E88E5" />
+          )}
         </View>
 
         <Text style={styles.title}>{t('setup.title')}</Text>
-        <Text style={styles.subtitle}>{t('setup.subtitle')}</Text>
+        <Text style={styles.subtitle}>
+          {isLoading ? (
+            <View style={styles.loadingTextContainer}>
+              <ActivityIndicator size="small" color="#1E88E5" />
+              <Text style={styles.loadingDot}>.</Text>
+              <Text style={styles.loadingDot}>.</Text>
+              <Text style={styles.loadingDot}>.</Text>
+            </View>
+          ) : (
+            t('setup.subtitle')
+          )}
+        </Text>
 
-        <TextInput
-          label={t('setup.enter_pin')}
-          value={pin}
-          onChangeText={handlePinChange}
-          secureTextEntry={!showPin}
-          keyboardType="numeric"
-          style={styles.input}
-          maxLength={6}
-          mode="outlined"
-          outlineColor="#E0E0E0"
-          activeOutlineColor={pinStrength.valid ? '#1E88E5' : '#FF3B30'}
-          right={
-            <TextInput.Icon
-              icon={showPin ? 'eye-off' : 'eye'}
-              onPress={() => setShowPin(!showPin)}
-              color="#1E88E5"
+        {!isLoading && (
+          <>
+            <TextInput
+              label={t('setup.enter_pin')}
+              value={pin}
+              onChangeText={handlePinChange}
+              secureTextEntry={!showPin}
+              keyboardType="numeric"
+              style={styles.input}
+              maxLength={6}
+              mode="outlined"
+              outlineColor="#E0E0E0"
+              activeOutlineColor={pinStrength.valid ? '#1E88E5' : '#FF3B30'}
+              disabled={isLoading}
+              right={
+                <TextInput.Icon
+                  icon={showPin ? 'eye-off' : 'eye'}
+                  onPress={() => setShowPin(!showPin)}
+                  color="#1E88E5"
+                />
+              }
             />
-          }
-        />
 
-        {!pinStrength.valid && (
-          <Text style={styles.warningText}>⚠️ {pinStrength.message}</Text>
+            {!pinStrength.valid && (
+              <Text style={styles.warningText}>⚠️ {pinStrength.message}</Text>
+            )}
+
+            <TextInput
+              label={t('setup.confirm_pin')}
+              value={confirmPin}
+              onChangeText={setConfirmPin}
+              secureTextEntry={!showPin}
+              keyboardType="numeric"
+              style={styles.input}
+              maxLength={6}
+              mode="outlined"
+              outlineColor="#E0E0E0"
+              activeOutlineColor="#1E88E5"
+              disabled={isLoading}
+            />
+
+            <View style={styles.securityTips}>
+              <Text style={styles.tipsTitle}>{t('setup.security_tips')}</Text>
+              <Text style={styles.tip}>• {t('setup.tip_1')}</Text>
+              <Text style={styles.tip}>• {t('setup.tip_2')}</Text>
+              <Text style={styles.tip}>• {t('setup.tip_3')}</Text>
+              <Text style={styles.tip}>• {t('setup.tip_4')}</Text>
+              <Text style={styles.tip}>• {t('setup.tip_5')}</Text>
+            </View>
+
+            <Button
+              mode="contained"
+              onPress={handleSetupComplete}
+              style={styles.button}
+              disabled={
+                pin.length < 4 || 
+                confirmPin.length < 4 || 
+                !pinStrength.valid || 
+                isLoading
+              }
+              loading={isLoading}
+              labelStyle={styles.buttonLabel}
+              icon={isLoading ? "clock" : "check-circle"}>
+              {isLoading ? '' : t('setup.complete_setup')}
+            </Button>
+          </>
         )}
 
-        <TextInput
-          label={t('setup.confirm_pin')}
-          value={confirmPin}
-          onChangeText={setConfirmPin}
-          secureTextEntry={!showPin}
-          keyboardType="numeric"
-          style={styles.input}
-          maxLength={6}
-          mode="outlined"
-          outlineColor="#E0E0E0"
-          activeOutlineColor="#1E88E5"
-        />
-
-        <View style={styles.securityTips}>
-          <Text style={styles.tipsTitle}>{t('setup.security_tips')}</Text>
-          <Text style={styles.tip}>• {t('setup.tip_1')}</Text>
-          <Text style={styles.tip}>• {t('setup.tip_2')}</Text>
-          <Text style={styles.tip}>• {t('setup.tip_3')}</Text>
-          <Text style={styles.tip}>• {t('setup.tip_4')}</Text>
-          <Text style={styles.tip}>• {t('setup.tip_5')}</Text>
-        </View>
-
-        <Button
-          mode="contained"
-          onPress={handleSetupComplete}
-          style={styles.button}
-          disabled={
-            pin.length < 4 || confirmPin.length < 4 || !pinStrength.valid
-          }
-          labelStyle={styles.buttonLabel}>
-          {t('setup.complete_setup')}
-        </Button>
+        {isLoading && (
+          <View style={styles.loadingInfoContainer}>
+            <View style={styles.loadingStep}>
+              <Icon name="shield-check" size={20} color="#4CAF50" />
+              <Text style={styles.loadingStepText}>Securing PIN</Text>
+            </View>
+            <View style={styles.loadingStep}>
+              <Icon name="shield-check" size={20} color="#4CAF50" />
+              <Text style={styles.loadingStepText}>Setting up security</Text>
+            </View>
+            <View style={styles.loadingStep}>
+              <ActivityIndicator size="small" color="#1E88E5" />
+              <Text style={styles.loadingStepText}>Finalizing setup</Text>
+            </View>
+          </View>
+        )}
       </Animated.View>
     </CustomKeyboardAvoidingView>
   );
@@ -177,6 +243,7 @@ const styles = StyleSheet.create({
   },
   content: {
     alignItems: 'center',
+    width: '100%',
   },
   iconContainer: {
     width: 120,
@@ -186,6 +253,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 20,
+  },
+  loadingIconContainer: {
+    position: 'relative',
+    width: 120,
+    height: 120,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  shieldOverlay: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    marginLeft: -12,
+    marginTop: -12,
   },
   title: {
     fontSize: 28,
@@ -200,6 +281,17 @@ const styles = StyleSheet.create({
     marginBottom: 40,
     color: '#666',
     lineHeight: 22,
+    minHeight: 22,
+  },
+  loadingTextContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingDot: {
+    fontSize: 24,
+    color: '#1E88E5',
+    marginHorizontal: 2,
   },
   input: {
     marginBottom: 10,
@@ -212,6 +304,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 10,
     textAlign: 'center',
+    width: '100%',
   },
   securityTips: {
     backgroundColor: '#E3F2FD',
@@ -239,11 +332,31 @@ const styles = StyleSheet.create({
     backgroundColor: '#42A5F5',
     width: '100%',
     elevation: 4,
+    minHeight: 50,
   },
   buttonLabel: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#FFF',
+  },
+  loadingInfoContainer: {
+    width: '100%',
+    marginTop: 30,
+    padding: 20,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+  },
+  loadingStep: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+    paddingVertical: 8,
+  },
+  loadingStepText: {
+    fontSize: 14,
+    color: '#333',
+    marginLeft: 12,
+    fontWeight: '500',
   },
 });
 

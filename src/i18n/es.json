@@ -61,7 +61,11 @@
     "this_app": "Esta aplicación",
     "security_question_required": "Se requiere pregunta de seguridad",
     "security_question_mandatory_desc": "Necesitas configurar una pregunta de seguridad antes de usar la aplicación. Esto se usará si olvidas tu PIN.",
-    "set_security_question": "Configurar pregunta de seguridad"
+    "set_security_question": "Configurar pregunta de seguridad",
+       "search_results": "Resultados de Búsqueda",
+    "apps_found": "aplicaciones encontradas",
+    "no_matching_apps": "No se encontraron aplicaciones coincidentes",
+    "search_suggestions": "Sugerencias de Búsqueda"
   },
   "setup": {
     "title": "Configura tu seguridad",
@@ -237,7 +241,12 @@
     "clear_title": "Borrar pregunta de seguridad",
     "clear_confirm": "¿Estás seguro de que deseas borrar tu pregunta de seguridad?",
     "clear_button": "Borrar",
-    "clear_success": "La pregunta de seguridad se ha borrado correctamente"
+    "clear_success": "La pregunta de seguridad se ha borrado correctamente",
+        "update_success": "Pregunta de seguridad actualizada exitosamente",
+    "current_answer": "Respuesta Actual",
+    "verify_instructions": "Por favor ingrese su respuesta actual para verificar su identidad",
+    "verify_and_continue": "Verificar y Continuar",
+    "select_new_question": "Seleccionar Nueva Pregunta de Seguridad"
   },
   "forgot_pin": {
     "title": "Olvidé mi PIN",
@@ -327,7 +336,9 @@
     "load_security_question_failed": "Error al cargar la pregunta de seguridad",
     "pin_mismatch": "Los PIN no coinciden",
     "reset_failed_title": "Error",
-    "reset_failed_message": "Error al restablecer la aplicación. Por favor, reinicia la aplicación."
+    "reset_failed_message": "Error al restablecer la aplicación. Por favor, reinicia la aplicación.",
+      "enter_current_answer": "Por favor ingrese su respuesta actual"
+
   },
   "alerts": {
     "success": "Éxito",

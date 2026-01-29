@@ -61,7 +61,11 @@
     "this_app": "Diese App",
     "security_question_required": "Sicherheitsfrage erforderlich",
     "security_question_mandatory_desc": "Sie müssen eine Sicherheitsfrage einrichten, bevor Sie die App verwenden. Diese wird verwendet, wenn Sie Ihre PIN vergessen.",
-    "set_security_question": "Sicherheitsfrage einrichten"
+    "set_security_question": "Sicherheitsfrage einrichten",
+       "search_results": "Suchergebnisse",
+    "apps_found": "Apps gefunden",
+    "no_matching_apps": "Keine passenden Apps gefunden",
+    "search_suggestions": "Suchvorschläge"
   },
   "setup": {
     "title": "Sicherheit einrichten",
@@ -237,7 +241,12 @@
     "clear_title": "Sicherheitsfrage löschen",
     "clear_confirm": "Sind Sie sicher, dass Sie Ihre Sicherheitsfrage löschen möchten?",
     "clear_button": "Löschen",
-    "clear_success": "Sicherheitsfrage wurde gelöscht"
+    "clear_success": "Sicherheitsfrage wurde gelöscht",
+     "update_success": "Sicherheitsfrage erfolgreich aktualisiert",
+    "current_answer": "Aktuelle Antwort",
+    "verify_instructions": "Bitte geben Sie Ihre aktuelle Antwort zur Identitätsprüfung ein",
+    "verify_and_continue": "Überprüfen und fortfahren",
+    "select_new_question": "Neue Sicherheitsfrage auswählen"
   },
   "forgot_pin": {
     "title": "PIN vergessen",
@@ -327,7 +336,8 @@
     "load_security_question_failed": "Fehler beim Laden der Sicherheitsfrage",
     "pin_mismatch": "PINs stimmen nicht überein",
     "reset_failed_title": "Fehler",
-    "reset_failed_message": "Fehler beim Zurücksetzen der App. Bitte starten Sie die Anwendung neu."
+    "reset_failed_message": "Fehler beim Zurücksetzen der App. Bitte starten Sie die Anwendung neu.",
+    "enter_current_answer": "Bitte geben Sie Ihre aktuelle Antwort ein"
   },
   "alerts": {
     "success": "Erfolg",

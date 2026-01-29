@@ -61,7 +61,11 @@
     "this_app": "此应用",
     "security_question_required": "需要安全问题",
     "security_question_mandatory_desc": "使用应用前需要设置安全问题。如果您忘记PIN，将使用此问题。",
-    "set_security_question": "设置安全问题"
+    "set_security_question": "设置安全问题",
+     "search_results": "搜索结果",
+    "apps_found": "个应用已找到",
+    "no_matching_apps": "未找到匹配的应用",
+    "search_suggestions": "搜索建议"
   },
   "setup": {
     "title": "设置您的安全",
@@ -238,7 +242,12 @@
     "clear_title": "清除安全问题",
     "clear_confirm": "您确定要清除安全问题吗？",
     "clear_button": "清除",
-    "clear_success": "安全问题已被清除"
+    "clear_success": "安全问题已被清除",
+       "update_success": "安全问题已成功更新",
+    "current_answer": "当前答案",
+    "verify_instructions": "请输入您当前的答案以验证身份",
+    "verify_and_continue": "验证并继续",
+    "select_new_question": "选择新的安全问题"
   },
   "forgot_pin": {
     "title": "忘记PIN码",
@@ -328,7 +337,9 @@
     "load_security_question_failed": "加载安全问题失败",
     "pin_mismatch": "PIN码不匹配",
     "reset_failed_title": "错误",
-    "reset_failed_message": "重置应用失败。请重启应用程序。"
+    "reset_failed_message": "重置应用失败。请重启应用程序。",
+       "enter_current_answer": "请输入您当前的答案"
+  
   },
   "alerts": {
     "success": "成功",

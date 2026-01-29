@@ -237,7 +237,7 @@ const SettingsScreen = () => {
         }
 
         // Show biometrics prompt
-const promptMessage =
+      const promptMessage =
   Platform.OS === 'ios'
     ? t('settings.enable_face_id_prompt')
     : t('settings.enable_biometrics_prompt');

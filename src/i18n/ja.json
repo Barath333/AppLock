@@ -61,7 +61,11 @@
     "this_app": "このアプリ",
     "security_question_required": "セキュリティ質問が必要です",
     "security_question_mandatory_desc": "アプリを使用する前にセキュリティ質問を設定する必要があります。これはPINを忘れた場合に使用されます。",
-    "set_security_question": "セキュリティ質問を設定"
+    "set_security_question": "セキュリティ質問を設定",
+     "search_results": "検索結果",
+    "apps_found": "件のアプリが見つかりました",
+    "no_matching_apps": "一致するアプリが見つかりません",
+    "search_suggestions": "検索候補"
   },
   "setup": {
     "title": "セキュリティ設定",
@@ -237,7 +241,12 @@
     "clear_title": "セキュリティ質問を削除",
     "clear_confirm": "セキュリティ質問を削除してもよろしいですか？",
     "clear_button": "削除",
-    "clear_success": "セキュリティ質問が削除されました"
+    "clear_success": "セキュリティ質問が削除されました",
+       "update_success": "セキュリティ質問が正常に更新されました",
+    "current_answer": "現在の回答",
+    "verify_instructions": "本人確認のために現在の回答を入力してください",
+    "verify_and_continue": "確認して続行",
+    "select_new_question": "新しいセキュリティ質問を選択"
   },
   "forgot_pin": {
     "title": "PINを忘れた",
@@ -327,7 +336,9 @@
     "load_security_question_failed": "セキュリティ質問の読み込みに失敗しました",
     "pin_mismatch": "PINが一致しません",
     "reset_failed_title": "エラー",
-    "reset_failed_message": "アプリのリセットに失敗しました。アプリを再起動してください。"
+    "reset_failed_message": "アプリのリセットに失敗しました。アプリを再起動してください。",
+      "enter_current_answer": "現在の回答を入力してください"
+
   },
   "alerts": {
     "success": "成功",
