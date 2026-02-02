@@ -56,6 +56,7 @@ const HomeScreen = () => {
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchAnimation] = useState(new Animated.Value(0));
   const [shouldAutoFocus, setShouldAutoFocus] = useState(false);
+  const [isFirstSetup, setIsFirstSetup] = useState(true);
 
   useEffect(() => {
     if (searchFocused) {
@@ -80,36 +81,42 @@ const HomeScreen = () => {
     }
   }, [searchFocused]);
 
-  useFocusEffect(
-    React.useCallback(() => {
-      console.log('🏠 HomeScreen focused - refreshing data');
-      loadSettings();
-      loadLockedApps();
-      loadInstalledApps();
-      checkSecurityQuestion();
-      
-      Keyboard.dismiss();
-      
-      return () => {
-        setSearchFocused(false);
-        setShouldAutoFocus(false);
-        Keyboard.dismiss();
-      };
-    }, []),
-  );
-
-  useEffect(() => {
-    console.log('🏠 HomeScreen mounted');
+useFocusEffect(
+  React.useCallback(() => {
+    console.log('🏠 HomeScreen focused - refreshing data');
     loadSettings();
-    loadInstalledApps();
     loadLockedApps();
+    loadInstalledApps();
+    checkSecurityQuestion();
+    
+    // Ensure our app is locked if security question is set
+    ensureAppLockIsLocked();
     
     Keyboard.dismiss();
     
     return () => {
+      setSearchFocused(false);
+      setShouldAutoFocus(false);
       Keyboard.dismiss();
     };
-  }, []);
+  }, []),
+);
+
+useEffect(() => {
+  console.log('🏠 HomeScreen mounted');
+  loadSettings();
+  loadInstalledApps();
+  loadLockedApps();
+  
+  // Ensure our app is locked if security question is set
+  ensureAppLockIsLocked();
+  
+  Keyboard.dismiss();
+  
+  return () => {
+    Keyboard.dismiss();
+  };
+}, []);
 
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener(
@@ -166,24 +173,28 @@ const HomeScreen = () => {
     });
   };
 
-  const checkSecurityQuestion = async () => {
-    try {
-      if (hasCheckedSecurityQuestion) return;
+const checkSecurityQuestion = async () => {
+  try {
+    if (hasCheckedSecurityQuestion) return;
+    
+    const securityQuestion = await AsyncStorage.getItem('security_question');
+    const securityAnswer = await AsyncStorage.getItem('security_answer');
+    
+    if (!securityQuestion || !securityAnswer) {
+      console.log('⚠️ Security question not set - showing mandatory modal');
       
-      const securityQuestion = await AsyncStorage.getItem('security_question');
-      const securityAnswer = await AsyncStorage.getItem('security_answer');
-      
-      if (!securityQuestion || !securityAnswer) {
-        console.log('⚠️ Security question not set - showing mandatory modal');
-        setTimeout(() => {
-          setShowSecurityQuestionModal(true);
-        }, 500);
-      }
-      setHasCheckedSecurityQuestion(true);
-    } catch (error) {
-      console.error('Error checking security question:', error);
+      // Small delay to ensure UI is ready
+      setTimeout(() => {
+        setShowSecurityQuestionModal(true);
+      }, 1000);
+    } else {
+      console.log('✅ Security question exists');
     }
-  };
+    setHasCheckedSecurityQuestion(true);
+  } catch (error) {
+    console.error('Error checking security question:', error);
+  }
+};
 
   const loadSettings = async () => {
     try {
@@ -210,8 +221,6 @@ const HomeScreen = () => {
       showAlert(t('alerts.error'), t('errors.setting_update_failed'), 'error');
     }
   };
-
-// In HomeScreen.js, update the loadLockedApps function:
 const loadLockedApps = async () => {
   try {
     console.log('📦 HomeScreen: Loading locked apps');
@@ -243,23 +252,6 @@ const loadLockedApps = async () => {
           }
         });
       }
-    } else {
-      // FIRST TIME SETUP: If no locked apps exist, auto-lock our own app
-      console.log('🆕 First time setup - auto-locking our own app');
-      lockedSet.add(OUR_APP_PACKAGE);
-      
-      // Save this initial state
-      await AsyncStorage.setItem('lockedApps', JSON.stringify(Array.from(lockedSet)));
-      console.log('💾 Saved initial locked apps with our app');
-    }
-
-    // ALWAYS ensure our own app is locked (security requirement)
-    if (!lockedSet.has(OUR_APP_PACKAGE)) {
-      console.log('🔒 Ensuring our app is locked (security requirement)');
-      lockedSet.add(OUR_APP_PACKAGE);
-      
-      // Save updated locked apps
-      await AsyncStorage.setItem('lockedApps', JSON.stringify(Array.from(lockedSet)));
     }
 
     console.log('🔒 Final locked apps set:', Array.from(lockedSet));
@@ -283,29 +275,143 @@ const loadLockedApps = async () => {
   }
 };
 
-  const saveLockedApps = async appsSet => {
+// Helper function for actual locking
+const performAppLock = async () => {
+  const savedLockedApps = await AsyncStorage.getItem('lockedApps');
+  
+  let lockedSet = new Set();
+  
+  if (savedLockedApps) {
     try {
-      const filteredApps = Array.from(appsSet);
-      console.log('💾 Saving locked apps:', filteredApps);
-
-      await AsyncStorage.setItem('lockedApps', JSON.stringify(filteredApps));
-      if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
-        await AppLockModule.setLockedApps(filteredApps);
-      }
-
-      setLockedApps(new Set(filteredApps));
-      
-      // Update apps list with new lock status
+      const lockedAppsArray = JSON.parse(savedLockedApps);
+      lockedAppsArray.forEach(item => {
+        const pkg = typeof item === 'string' ? item : item.packageName;
+        if (pkg) {
+          lockedSet.add(pkg);
+        }
+      });
+    } catch (e) {
+      console.error('Error parsing locked apps:', e);
+    }
+  }
+  
+  // Check if our app is already locked
+  if (!lockedSet.has(OUR_APP_PACKAGE)) {
+    console.log('🔒 Locking our app for security');
+    lockedSet.add(OUR_APP_PACKAGE);
+    
+    // Save updated locked apps
+    await AsyncStorage.setItem('lockedApps', JSON.stringify(Array.from(lockedSet)));
+    
+    // Update native module
+    if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
+      await AppLockModule.setLockedApps(Array.from(lockedSet));
+    }
+    
+    // Update UI state
+    setLockedApps(lockedSet);
+    
+    // Update apps list
+    if (apps.length > 0) {
       const updatedApps = apps.map(app => ({
         ...app,
-        locked: filteredApps.includes(app.packageName),
+        locked: lockedSet.has(app.packageName),
       }));
       setApps(updatedApps);
       setFilteredApps(updatedApps);
-    } catch (error) {
-      console.error('❌ Error saving locked apps:', error);
     }
-  };
+    
+    console.log('✅ App Lock is now locked');
+  } else {
+    console.log('🔒 App Lock is already locked');
+  }
+};
+
+const ensureAppLockIsLocked = async () => {
+  try {
+    console.log('🔍 Ensuring App Lock is locked...');
+    
+    // Get all data in parallel to avoid race conditions
+    const [securityQuestion, securityAnswer, savedLockedApps] = await Promise.all([
+      AsyncStorage.getItem('security_question'),
+      AsyncStorage.getItem('security_answer'),
+      AsyncStorage.getItem('lockedApps')
+    ]);
+    
+    if (securityQuestion && securityAnswer) {
+      console.log('✅ Security question exists');
+      
+      let lockedSet = new Set();
+      
+      if (savedLockedApps) {
+        try {
+          const lockedAppsArray = JSON.parse(savedLockedApps);
+          lockedAppsArray.forEach(item => {
+            const pkg = typeof item === 'string' ? item : item.packageName;
+            if (pkg) lockedSet.add(pkg);
+          });
+        } catch (e) {
+          console.error('Error parsing locked apps:', e);
+        }
+      }
+      
+      // Check if our app is already locked
+      if (!lockedSet.has(OUR_APP_PACKAGE)) {
+        console.log('🔒 Locking our app for security');
+        lockedSet.add(OUR_APP_PACKAGE);
+        
+        // Save updated locked apps and flag
+        await AsyncStorage.multiSet([
+          ['lockedApps', JSON.stringify(Array.from(lockedSet))],
+          ['just_set_security_question', 'true']
+        ]);
+        
+        // Update UI state immediately
+        setLockedApps(lockedSet);
+        
+        // Update apps list if available
+        if (apps.length > 0) {
+          const updatedApps = apps.map(app => ({
+            ...app,
+            locked: lockedSet.has(app.packageName),
+          }));
+          setApps(updatedApps);
+          setFilteredApps(updatedApps);
+        }
+        
+        console.log('✅ App Lock is now locked');
+      } else {
+        console.log('🔒 App Lock is already locked');
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error ensuring App Lock is locked:', error);
+  }
+};
+
+const saveLockedApps = async appsSet => {
+  try {
+    const filteredApps = Array.from(appsSet);
+    console.log('💾 Saving locked apps:', filteredApps);
+
+    await AsyncStorage.setItem('lockedApps', JSON.stringify(filteredApps));
+    if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
+      await AppLockModule.setLockedApps(filteredApps);
+    }
+
+    setLockedApps(new Set(filteredApps));
+    
+    // Update apps list with new lock status
+    const updatedApps = apps.map(app => ({
+      ...app,
+      locked: filteredApps.includes(app.packageName),
+    }));
+    setApps(updatedApps);
+    setFilteredApps(updatedApps);
+  } catch (error) {
+    console.error('❌ Error saving locked apps:', error);
+  }
+};
 
   const loadInstalledApps = async () => {
     try {
@@ -1251,10 +1357,7 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   statLabel: {
-    // fontSize: 14,
-    // color: '#000',
-    // fontWeight: '00',
-      fontSize: 13,
+    fontSize: 13,
     fontWeight: '600',
     color: '#333',
   },

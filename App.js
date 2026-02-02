@@ -99,23 +99,40 @@ export default function App() {
     }
   };
 
-  // CRITICAL FIX: Check if App Lock itself is locked
-  const checkIfAppLockIsLocked = async () => {
-    try {
-      console.log('🔍 Checking if App Lock is locked...');
-      const lockedApps = await AsyncStorage.getItem('lockedApps');
+// In App.js, update the checkIfAppLockIsLocked function:
+const checkIfAppLockIsLocked = async () => {
+  try {
+    console.log('🔍 Checking if App Lock is locked...');
+    
+    // Skip if we're already in lock screen mode
+    if (isLockScreenMode) {
+      console.log('⏭️ Already in lock screen mode, skipping check');
+      return;
+    }
+    
+    // Check both conditions in parallel
+    const [lockedApps, securityQuestion, securityAnswer, justSetSecurityQuestion] = await Promise.all([
+      AsyncStorage.getItem('lockedApps'),
+      AsyncStorage.getItem('security_question'),
+      AsyncStorage.getItem('security_answer'),
+      AsyncStorage.getItem('just_set_security_question')
+    ]);
 
+    // Only lock our app if security question is set
+    if (securityQuestion && securityAnswer) {
+      console.log('✅ Security question exists');
+      
       if (lockedApps) {
         const lockedAppsArray = JSON.parse(lockedApps);
         const isLocked = lockedAppsArray.includes('com.applock');
         console.log('🔒 App Lock locked status:', isLocked);
         setIsAppLocked(isLocked);
 
-        // If App Lock is locked and we're not already in lock screen mode, force it
-        if (isLocked && !isLockScreenMode && !pendingLockedApp) {
-          console.log('🚨 App Lock is LOCKED - forcing lock screen mode');
-
-          // Create a fake locked app event for our own app
+        // Only show lock screen if app is locked AND we're not already showing it
+        // AND we didn't just set up security question
+        if (isLocked && !isLockScreenMode && !pendingLockedApp && justSetSecurityQuestion !== 'true') {
+          console.log('🚨 App Lock is LOCKED - showing lock screen');
+          
           const lockedAppEvent = {
             packageName: 'com.applock',
             className: null,
@@ -124,13 +141,23 @@ export default function App() {
 
           setIsLockScreenMode(true);
           setPendingLockedApp(lockedAppEvent);
-          setIsSplashVisible(false);
+          
+          // Don't hide splash screen if it's already hidden
+          if (isSplashVisible) {
+            setIsSplashVisible(false);
+          }
+        } else if (justSetSecurityQuestion === 'true') {
+          console.log('⏭️ Just set security question, cleaning up flag');
+          await AsyncStorage.removeItem('just_set_security_question');
         }
       }
-    } catch (error) {
-      console.error('❌ Error checking if App Lock is locked:', error);
+    } else {
+      console.log('🔓 Security question not set, keeping App Lock unlocked');
     }
-  };
+  } catch (error) {
+    console.error('❌ Error checking if App Lock is locked:', error);
+  }
+};
 
   const handleResetToSetup = async () => {
     console.log('🔄 Resetting app to setup state...');

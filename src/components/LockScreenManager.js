@@ -191,43 +191,57 @@ const handleAppStateChange = nextAppState => {
     }
   };
 
-  const handleLockedEvent = event => {
-    console.log('🎯 Lock Event Received:', event.packageName);
+// In LockScreenManager.js, update the handleLockedEvent function:
+const handleLockedEvent = event => {
+  console.log('🎯 Lock Event Received:', event.packageName);
 
-    // CRITICAL FIX: Add event rate limiting to prevent loops
-    const currentTime = Date.now();
-    if (currentTime - lastEventTime.current < 1000) {
-      console.log('⏭️ Event too frequent, skipping to prevent loop');
-      return;
-    }
-    lastEventTime.current = currentTime;
+  // CRITICAL: Rate limiting to prevent event floods
+  const currentTime = Date.now();
+  if (currentTime - lastEventTime.current < 500) {
+    console.log('⏭️ Event rate limited, skipping');
+    return;
+  }
+  lastEventTime.current = currentTime;
 
-    // SPECIAL HANDLING FOR OUR OWN APP - Skip duplicate events
-    if (event.packageName === OUR_APP_PACKAGE) {
-      if (showLockScreen) {
-        console.log(
-          '⏭️ Already showing lock screen for our app, skipping duplicate event',
-        );
-        return;
-      }
-      if (lastProcessedPackage.current === OUR_APP_PACKAGE) {
-        console.log('⏭️ Recently processed our app, skipping duplicate event');
-        return;
-      }
-    }
+  // Skip duplicate events
+  if (event.packageName === lastProcessedPackage.current) {
+    console.log('⏭️ Skipping duplicate event for:', event.packageName);
+    return;
+  }
 
-    // If we're in AppLock mode, ignore new lock events (we're already handling one)
+  // SPECIAL CASE: Handle our own app differently
+  if (event.packageName === OUR_APP_PACKAGE) {
+    console.log('🏠 Lock event for our own app');
+    
+    // If we're already in lock screen mode, ignore
     if (isAppLockMode && showLockScreen) {
-      console.log(
-        '⏭️ Ignoring lock event - already in AppLock mode with active lock screen',
-      );
+      console.log('⏭️ Already in lock screen mode for our app, ignoring');
       return;
     }
+    
+    // Immediately check security and process event
+    const checkSecurityAndProcess = async () => {
+      try {
+        const securityQuestion = await AsyncStorage.getItem('security_question');
+        if (!securityQuestion) {
+          console.log('⏭️ No security question, ignoring lock event');
+          return;
+        }
+        // Process the event
+        processLockEvent(event);
+      } catch (error) {
+        console.error('Error checking security:', error);
+        processLockEvent(event);
+      }
+    };
+    
+    checkSecurityAndProcess();
+    return;
+  }
 
-    // Add to queue and process
-    eventQueue.current.push(event);
-    processNextQueuedEvent();
-  };
+  // Process the event for other apps
+  processLockEvent(event);
+};
 
   const processNextQueuedEvent = () => {
     if (isProcessingEvent.current || eventQueue.current.length === 0) {

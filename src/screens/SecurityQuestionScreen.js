@@ -1,4 +1,4 @@
-// SecurityQuestionScreen.js - Fixed keyboard handling without measure()
+// SecurityQuestionScreen.js - Fixed with toast message
 import React, {useState, useEffect, useRef} from 'react';
 import {
   View,
@@ -12,6 +12,7 @@ import {
   TouchableWithoutFeedback,
   UIManager,
   findNodeHandle,
+  ToastAndroid,
 } from 'react-native';
 import {
   TextInput,
@@ -20,6 +21,7 @@ import {
   RadioButton,
   Portal,
   Dialog,
+  Snackbar,
 } from 'react-native-paper';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import {useTranslation} from 'react-i18next';
@@ -51,6 +53,8 @@ const SecurityQuestionScreen = () => {
   const [showExitDialog, setShowExitDialog] = useState(false);
   const [verificationError, setVerificationError] = useState('');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
   
   const isMandatory = route.params?.mandatory || false;
   const backHandlerRef = useRef(null);
@@ -163,72 +167,76 @@ const SecurityQuestionScreen = () => {
     }
   };
 
-  const handleSave = async () => {
-    if (!selectedQuestion) {
-      showAlert(t('alerts.error'), t('errors.select_question'), 'error');
-      return;
-    }
+const handleSave = async () => {
+  if (!selectedQuestion) {
+    showAlert(t('alerts.error'), t('errors.select_question'), 'error');
+    return;
+  }
 
-    let questionToSave = selectedQuestion;
-    if (selectedQuestion === t('security_question.custom_question')) {
-      if (!customQuestion.trim()) {
-        showAlert(
-          t('alerts.error'),
-          t('errors.enter_custom_question'),
-          'error',
-        );
-        return;
-      }
-      questionToSave = customQuestion.trim();
-    }
-
-    if (!answer.trim()) {
-      showAlert(t('alerts.error'), t('errors.enter_answer'), 'error');
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      await AsyncStorage.setItem('security_question', questionToSave);
-      await AsyncStorage.setItem(
-        'security_answer',
-        answer.trim().toLowerCase(),
-      );
-
-      // Reload existing question
-      await loadExistingQuestion();
-      
+  let questionToSave = selectedQuestion;
+  if (selectedQuestion === t('security_question.custom_question')) {
+    if (!customQuestion.trim()) {
       showAlert(
-        t('alerts.success'),
-        existingQuestion ? t('security_question.update_success') : t('security_question.save_success'),
-        'success',
-        [
-          {
-            text: t('common.ok'),
-            onPress: () => {
-              if (isMandatory) {
-                navigation.goBack();
-              }
-            },
-          },
-        ],
+        t('alerts.error'),
+        t('errors.enter_custom_question'),
+        'error',
       );
-      
-      // Reset form
+      return;
+    }
+    questionToSave = customQuestion.trim();
+  }
+
+  if (!answer.trim()) {
+    showAlert(t('alerts.error'), t('errors.enter_answer'), 'error');
+    return;
+  }
+
+  setIsLoading(true);
+
+  try {
+    // Save security question
+    await AsyncStorage.setItem('security_question', questionToSave);
+    await AsyncStorage.setItem(
+      'security_answer',
+      answer.trim().toLowerCase(),
+    );
+
+    // Show immediate toast message
+    const successMessage = existingQuestion 
+      ? t('security_question.update_success') 
+      : t('security_question.save_success');
+    
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(successMessage, ToastAndroid.SHORT);
+    } else {
+      setToastMessage(successMessage);
+      setShowToast(true);
+    }
+
+    // For first time setup, set flag for immediate locking
+    if (!existingQuestion) {
+      await AsyncStorage.setItem('just_set_security_question', 'true');
+    }
+
+    // Navigate immediately without delay
+    if (isMandatory) {
+      navigation.goBack();
+    } else {
+      await loadExistingQuestion();
       setAnswer('');
       if (!existingQuestion) {
         setSelectedQuestion('');
         setCustomQuestion('');
       }
-    } catch (error) {
-      console.error('Error saving security question:', error);
-      showAlert(t('alerts.error'), t('errors.save_failed'), 'error');
-    } finally {
-      setIsLoading(false);
     }
-  };
-
+    
+  } catch (error) {
+    console.error('Error saving security question:', error);
+    showAlert(t('alerts.error'), t('errors.save_failed'), 'error');
+  } finally {
+    setIsLoading(false);
+  }
+};
   const dismissKeyboard = () => {
     Keyboard.dismiss();
   };
@@ -422,6 +430,17 @@ const SecurityQuestionScreen = () => {
         </View>
       </TouchableWithoutFeedback>
 
+      {/* iOS Snackbar for toast */}
+      {Platform.OS === 'ios' && (
+        <Snackbar
+          visible={showToast}
+          onDismiss={() => setShowToast(false)}
+          duration={1500}
+          style={styles.toast}>
+          {toastMessage}
+        </Snackbar>
+      )}
+
       {/* Exit Dialog for mandatory mode */}
       <Portal>
         <Dialog
@@ -577,6 +596,12 @@ const styles = StyleSheet.create({
   },
   cancelEditButton: {
     borderRadius: 8,
+  },
+  toast: {
+    position: 'absolute',
+    bottom: 50,
+    left: 20,
+    right: 20,
   },
 });
 
