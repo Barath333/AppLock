@@ -65,7 +65,12 @@
       "search_results": "검색 결과",
     "apps_found": "개 앱 찾음",
     "no_matching_apps": "일치하는 앱을 찾을 수 없습니다",
-    "search_suggestions": "검색 제안"
+    "search_suggestions": "검색 제안",
+       "locked_apps_desc": "현재 잠겨 있는 앱입니다",
+    "all_apps_desc": "기기에 설치된 모든 앱",
+    "no_locked_apps": "잠긴 앱 없음",
+    "no_locked_apps_desc": "아직 앱을 잠그지 않았습니다. 스위치를 사용하여 앱을 잠그세요.",
+    "all_apps": "모든 앱"
   },
   "setup": {
     "title": "보안 설정",

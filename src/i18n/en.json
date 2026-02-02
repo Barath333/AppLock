@@ -53,7 +53,7 @@
     "initial_setup_message": "Default security setup complete. Your AppLock is now protecting your apps.",
     "security_recommendation": "Security Recommendation",
     "security_recommendation_desc": "Lock the App Lock application itself for maximum security. Otherwise, anyone can access and modify your lock settings.",
-    "security_enabled_message": "App Lock is now protected. You will need to enter your PIN to access it.",
+   
     "quick_actions": "Quick Actions",
     "installed_apps": "Installed Apps",
     "apps": "apps",
@@ -67,7 +67,15 @@
     "search_results": "Search Results",
     "apps_found": "apps found",
     "no_matching_apps": "No matching apps found",
-    "search_suggestions": "Search Suggestions"
+    "search_suggestions": "Search Suggestions",
+     "locked_apps_desc": "These are the apps that are currently locked",
+    "all_apps_desc": "All installed apps on your device",
+    "no_locked_apps": "No Locked Apps",
+    "no_locked_apps_desc": "You haven't locked any apps yet. Use the switches to lock apps.",
+    "all_apps": "All Apps",
+     "cannot_unlock_applock": "For security reasons, you cannot unlock the App Lock itself. The app must remain locked to protect your other applications.",
+    "all_apps_unlocked_except_our": "All apps have been unlocked except the App Lock itself (security requirement)",
+    "security_enabled_message": "App Lock security is enabled. The app will remain locked to protect your settings and other applications."
   },
 
   "setup": {
@@ -370,7 +378,8 @@
     "unlock_all": "Unlock All",
     "welcome": "Welcome to AppLock!",
     "lock_all_apps": "Lock All Apps",
-    "unlock_all_apps": "Unlock All Apps"
+    "unlock_all_apps": "Unlock All Apps",
+     "security_warning": "Security Warning"
   },
 
   "drawer": {

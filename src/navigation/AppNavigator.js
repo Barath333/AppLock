@@ -15,12 +15,13 @@ import SecurityQuestionScreen from '../screens/SecurityQuestionScreen';
 import AboutScreen from '../screens/AboutScreen';
 import ForgotPinScreen from '../screens/ForgotPinScreen';
 import LanguageScreen from '../screens/LanguageScreen';
+import AppsListScreen from '../screens/AppsListScreen';
+import ForgotPinResetScreen from '../screens/ForgotPinResetScreen';
 
 import {DrawerContentScrollView, DrawerItem} from '@react-navigation/drawer';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import {useTranslation} from 'react-i18next';
-import ForgotPinResetScreen from '../screens/ForgotPinResetScreen';
 
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -293,33 +294,31 @@ function AppNavigator({isSetupCompleted, onSetupComplete}) {
     }
   };
 
-// AppNavigator.js - Update the checkSetupStatus function
+  const checkSetupStatus = async () => {
+    try {
+      console.log('🔍 Checking setup status locally...');
 
-const checkSetupStatus = async () => {
-  try {
-    console.log('🔍 Checking setup status locally...');
+      const setupCompleted = await AsyncStorage.getItem('setupCompleted');
+      const hasPIN = await checkIfPINExists();
+      const hasSecurityQuestion = await AsyncStorage.getItem('security_question');
 
-    const setupCompleted = await AsyncStorage.getItem('setupCompleted');
-    const hasPIN = await checkIfPINExists();
-    const hasSecurityQuestion = await AsyncStorage.getItem('security_question');
+      console.log('📋 Local Setup Status:', {setupCompleted, hasPIN, hasSecurityQuestion});
 
-    console.log('📋 Local Setup Status:', {setupCompleted, hasPIN, hasSecurityQuestion});
-
-    if (setupCompleted === 'true' && hasPIN) {
-      // Check if security question is set
-      if (!hasSecurityQuestion) {
-        console.log('⚠️ Setup completed but security question not set');
-        // We'll handle this in HomeScreen
+      if (setupCompleted === 'true' && hasPIN) {
+        // Check if security question is set
+        if (!hasSecurityQuestion) {
+          console.log('⚠️ Setup completed but security question not set');
+          // We'll handle this in HomeScreen
+        }
+        await determineInitialRoute(true);
+      } else {
+        await determineInitialRoute(false);
       }
-      await determineInitialRoute(true);
-    } else {
+    } catch (error) {
+      console.error('❌ Error checking setup status:', error);
       await determineInitialRoute(false);
     }
-  } catch (error) {
-    console.error('❌ Error checking setup status:', error);
-    await determineInitialRoute(false);
-  }
-};
+  };
 
   const handleSetupComplete = () => {
     console.log('✅ Setup completed in AppNavigator');
@@ -371,6 +370,17 @@ const checkSetupStatus = async () => {
         options={{
           gestureEnabled: true,
           animationEnabled: true,
+        }}
+      />
+
+      {/* Apps List Screen - For showing locked/all apps */}
+      <Stack.Screen
+        name="AppsList"
+        component={AppsListScreen}
+        options={{
+          headerShown: false,
+          animationEnabled: true,
+          gestureEnabled: true,
         }}
       />
 
@@ -429,16 +439,17 @@ const checkSetupStatus = async () => {
           presentation: 'modal',
         }}
       />
-     <Stack.Screen
-  name="ForgotPinReset"
-  component={ForgotPinResetScreen}
-  options={{
-    headerShown: true,
-    title: 'Reset PIN',
-    animationEnabled: true,
-    presentation: 'modal',
-  }}
-/>
+      
+      <Stack.Screen
+        name="ForgotPinReset"
+        component={ForgotPinResetScreen}
+        options={{
+          headerShown: true,
+          title: 'Reset PIN',
+          animationEnabled: true,
+          presentation: 'modal',
+        }}
+      />
     </Stack.Navigator>
   );
 }

@@ -262,19 +262,14 @@ const checkLockScreenMode = async () => {
 
     console.log('📭 App started in normal mode');
     
-    // Only show splash on initial load, not when returning from lock screen
-    // Add a check to prevent multiple splash screens
-    const hasShownSplash = await AsyncStorage.getItem('hasShownSplash');
-    if (!hasShownSplash && !isLockScreenMode) {
-      await AsyncStorage.setItem('hasShownSplash', 'true');
-      const timer = setTimeout(() => {
-        console.log('⏰ Hiding splash screen');
-        setIsSplashVisible(false);
-      }, 2000);
-      return () => clearTimeout(timer);
-    } else {
+    // Always show splash screen for 2 seconds on app start
+    // Remove the AsyncStorage check that prevents showing splash
+    const timer = setTimeout(() => {
+      console.log('⏰ Hiding splash screen');
       setIsSplashVisible(false);
-    }
+    }, 2000);
+    
+    return () => clearTimeout(timer);
   } catch (error) {
     console.error('❌ Error checking lock screen mode:', error);
     // Don't show splash on error

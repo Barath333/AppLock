@@ -270,66 +270,72 @@ class AppLockModule(reactContext: ReactApplicationContext) : ReactContextBaseJav
         }
     }
 
-    @ReactMethod
-    fun getLockedApps(promise: Promise) {
-        try {
-            val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
-            val lockedApps = prefs.getStringSet("lockedApps", setOf()) ?: setOf()
-            
-            Log.d("AppLockModule", "📋 Getting locked apps from native: $lockedApps")
-            
-            val result = WritableNativeArray()
-            lockedApps.forEach { packageName ->
-                result.pushString(packageName)
-            }
-            
-            promise.resolve(result)
-        } catch (e: Exception) {
-            Log.e("AppLockModule", "❌ Error getting locked apps: ${e.message}")
-            promise.reject("LOCKED_APPS_ERROR", e.message)
-        }
-    }
+   
 
-    @ReactMethod
-    fun setLockedApps(lockedApps: ReadableArray, promise: Promise) {
-        try {
-            val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+
+@ReactMethod
+fun setLockedApps(lockedApps: ReadableArray, promise: Promise) {
+    try {
+        val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+        val editor = prefs.edit()
+        val appsSet = mutableSetOf<String>()
+        
+        Log.d("AppLockModule", "💾 Setting locked apps in native: ${lockedApps.size()}")
+        
+        for (i in 0 until lockedApps.size()) {
+            val packageName = lockedApps.getString(i)
+            if (packageName != null) {
+                appsSet.add(packageName)
+                Log.d("AppLockModule", "   - $packageName")
+            }
+        }
+        
+        // CRITICAL: Always include our own app in locked apps
+        if (!appsSet.contains(OUR_APP_PACKAGE)) {
+            appsSet.add(OUR_APP_PACKAGE)
+            Log.d("AppLockModule", "   + 🔒 Added our own app (security requirement)")
+        }
+        
+        editor.putStringSet("lockedApps", appsSet)
+        editor.apply()
+        
+        Log.d("AppLockModule", "✅ Locked apps saved successfully")
+        promise.resolve(true)
+    } catch (e: Exception) {
+        Log.e("AppLockModule", "❌ Error setting locked apps: ${e.message}")
+        promise.reject("SET_LOCKED_APPS_ERROR", e.message)
+    }
+}
+
+
+@ReactMethod
+fun getLockedApps(promise: Promise) {
+    try {
+        val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
+        var lockedApps = prefs.getStringSet("lockedApps", setOf()) ?: setOf()
+        
+        // Ensure our own app is always in the list
+        if (!lockedApps.contains(OUR_APP_PACKAGE)) {
+            lockedApps = lockedApps + OUR_APP_PACKAGE
             val editor = prefs.edit()
-            val appsSet = mutableSetOf<String>()
-            
-            Log.d("AppLockModule", "💾 Setting locked apps in native: ${lockedApps.size()}")
-            
-            for (i in 0 until lockedApps.size()) {
-                val packageName = lockedApps.getString(i)
-                if (packageName != null) {
-                    appsSet.add(packageName)
-                    Log.d("AppLockModule", "   - $packageName")
-                }
-            }
-            
-            editor.putStringSet("lockedApps", appsSet)
+            editor.putStringSet("lockedApps", lockedApps)
             editor.apply()
-            
-            Log.d("AppLockModule", "✅ Locked apps saved successfully")
-            promise.resolve(true)
-        } catch (e: Exception) {
-            Log.e("AppLockModule", "❌ Error setting locked apps: ${e.message}")
-            promise.reject("SET_LOCKED_APPS_ERROR", e.message)
+            Log.d("AppLockModule", "➕ Added our app to locked apps (was missing)")
         }
-    }
-
-    @ReactMethod
-    fun getAutoLockNewApps(promise: Promise) {
-        try {
-            val prefs = reactApplicationContext.getSharedPreferences("AppLock", Context.MODE_PRIVATE)
-            val autoLockNewApps = prefs.getBoolean("autoLockNewApps", true)
-            Log.d("AppLockModule", "🔄 Auto-lock new apps setting: $autoLockNewApps")
-            promise.resolve(autoLockNewApps)
-        } catch (e: Exception) {
-            Log.e("AppLockModule", "❌ Error getting auto-lock setting: ${e.message}")
-            promise.reject("AUTO_LOCK_ERROR", e.message)
+        
+        Log.d("AppLockModule", "📋 Getting locked apps from native: $lockedApps")
+        
+        val result = WritableNativeArray()
+        lockedApps.forEach { packageName ->
+            result.pushString(packageName)
         }
+        
+        promise.resolve(result)
+    } catch (e: Exception) {
+        Log.e("AppLockModule", "❌ Error getting locked apps: ${e.message}")
+        promise.reject("LOCKED_APPS_ERROR", e.message)
     }
+}
 
     @ReactMethod
     fun setAutoLockNewApps(enabled: Boolean, promise: Promise) {

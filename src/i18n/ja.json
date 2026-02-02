@@ -65,7 +65,12 @@
      "search_results": "検索結果",
     "apps_found": "件のアプリが見つかりました",
     "no_matching_apps": "一致するアプリが見つかりません",
-    "search_suggestions": "検索候補"
+    "search_suggestions": "検索候補",
+      "locked_apps_desc": "現在ロックされているアプリです",
+    "all_apps_desc": "デバイスにインストールされているすべてのアプリ",
+    "no_locked_apps": "ロックされたアプリはありません",
+    "no_locked_apps_desc": "まだアプリをロックしていません。スイッチを使用してアプリをロックしてください。",
+    "all_apps": "すべてのアプリ"
   },
   "setup": {
     "title": "セキュリティ設定",

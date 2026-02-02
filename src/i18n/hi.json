@@ -65,7 +65,12 @@
        "search_results": "खोज परिणाम",
     "apps_found": "ऐप्स मिले",
     "no_matching_apps": "कोई मिलान ऐप्स नहीं मिले",
-    "search_suggestions": "खोज सुझाव"
+    "search_suggestions": "खोज सुझाव",
+      "locked_apps_desc": "ये वे ऐप हैं जो वर्तमान में लॉक हैं",
+    "all_apps_desc": "आपके डिवाइस पर स्थापित सभी ऐप",
+    "no_locked_apps": "कोई लॉक ऐप नहीं",
+    "no_locked_apps_desc": "आपने अभी तक कोई ऐप लॉक नहीं किया है। ऐप्स को लॉक करने के लिए स्विच का उपयोग करें।",
+    "all_apps": "सभी ऐप्स"
   },
   "setup": {
     "title": "अपनी सुरक्षा सेट करें",

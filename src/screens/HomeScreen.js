@@ -55,7 +55,7 @@ const HomeScreen = () => {
   const [hasCheckedSecurityQuestion, setHasCheckedSecurityQuestion] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchAnimation] = useState(new Animated.Value(0));
-  const [shouldAutoFocus, setShouldAutoFocus] = useState(false); // NEW: Control autoFocus
+  const [shouldAutoFocus, setShouldAutoFocus] = useState(false);
 
   useEffect(() => {
     if (searchFocused) {
@@ -65,7 +65,6 @@ const HomeScreen = () => {
         easing: Easing.out(Easing.cubic),
         useNativeDriver: false,
       }).start(() => {
-        // Only auto-focus after animation completes
         setTimeout(() => {
           setShouldAutoFocus(true);
         }, 100);
@@ -89,11 +88,9 @@ const HomeScreen = () => {
       loadInstalledApps();
       checkSecurityQuestion();
       
-      // IMPORTANT: Dismiss keyboard when screen is focused
       Keyboard.dismiss();
       
       return () => {
-        // Reset search when leaving screen
         setSearchFocused(false);
         setShouldAutoFocus(false);
         Keyboard.dismiss();
@@ -107,16 +104,13 @@ const HomeScreen = () => {
     loadInstalledApps();
     loadLockedApps();
     
-    // Dismiss any keyboard when component mounts
     Keyboard.dismiss();
     
     return () => {
-      // Clean up when component unmounts
       Keyboard.dismiss();
     };
   }, []);
 
-  // Add keyboard listener to handle when keyboard is shown/hidden
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener(
       'keyboardDidShow',
@@ -129,7 +123,6 @@ const HomeScreen = () => {
       'keyboardDidHide',
       () => {
         console.log('⌨️ Keyboard hidden');
-        // If search is focused but keyboard is hidden, maybe user clicked back
         if (searchFocused && searchQuery === '') {
           setSearchFocused(false);
         }
@@ -153,6 +146,25 @@ const HomeScreen = () => {
       );
     }
   }, [searchQuery, apps]);
+
+  // Function to navigate to locked apps screen
+  const navigateToLockedApps = () => {
+    const lockedAppsList = apps.filter(app => app.locked);
+    navigation.navigate('AppsList', {
+      title: t('home.locked_apps'),
+      apps: lockedAppsList,
+      type: 'locked',
+    });
+  };
+
+  // Function to navigate to all apps screen
+  const navigateToAllApps = () => {
+    navigation.navigate('AppsList', {
+      title: t('home.all_apps'),
+      apps: apps,
+      type: 'all',
+    });
+  };
 
   const checkSecurityQuestion = async () => {
     try {
@@ -199,59 +211,77 @@ const HomeScreen = () => {
     }
   };
 
-  const loadLockedApps = async () => {
-    try {
-      console.log('📦 HomeScreen: Loading locked apps');
-      const savedLockedApps = await AsyncStorage.getItem('lockedApps');
-      let lockedSet = new Set();
+// In HomeScreen.js, update the loadLockedApps function:
+const loadLockedApps = async () => {
+  try {
+    console.log('📦 HomeScreen: Loading locked apps');
+    const savedLockedApps = await AsyncStorage.getItem('lockedApps');
+    let lockedSet = new Set();
 
-      if (savedLockedApps) {
-        let lockedAppsArray;
-        try {
-          lockedAppsArray = JSON.parse(savedLockedApps);
-          console.log('📋 Raw locked apps from storage:', lockedAppsArray);
-        } catch (e) {
-          console.error('❌ Error parsing locked apps:', e);
-          await AsyncStorage.removeItem('lockedApps');
-          lockedAppsArray = [];
-        }
-
-        if (Array.isArray(lockedAppsArray) && lockedAppsArray.length > 0) {
-          lockedAppsArray.forEach(item => {
-            let packageName;
-            if (typeof item === 'string') {
-              packageName = item;
-            } else if (typeof item === 'object' && item.packageName) {
-              packageName = item.packageName;
-            }
-
-            if (packageName) {
-              lockedSet.add(packageName);
-            }
-          });
-        }
+    if (savedLockedApps) {
+      let lockedAppsArray;
+      try {
+        lockedAppsArray = JSON.parse(savedLockedApps);
+        console.log('📋 Raw locked apps from storage:', lockedAppsArray);
+      } catch (e) {
+        console.error('❌ Error parsing locked apps:', e);
+        await AsyncStorage.removeItem('lockedApps');
+        lockedAppsArray = [];
       }
 
-      console.log('🔒 Final locked apps set:', Array.from(lockedSet));
-      setLockedApps(lockedSet);
+      if (Array.isArray(lockedAppsArray) && lockedAppsArray.length > 0) {
+        lockedAppsArray.forEach(item => {
+          let packageName;
+          if (typeof item === 'string') {
+            packageName = item;
+          } else if (typeof item === 'object' && item.packageName) {
+            packageName = item.packageName;
+          }
 
-      if (apps.length > 0) {
-        const updatedApps = apps.map(app => ({
-          ...app,
-          locked: lockedSet.has(app.packageName),
-        }));
-        setApps(updatedApps);
-        setFilteredApps(updatedApps);
+          if (packageName) {
+            lockedSet.add(packageName);
+          }
+        });
       }
-
-      const packageNamesArray = Array.from(lockedSet);
-      if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
-        await AppLockModule.setLockedApps(packageNamesArray);
-      }
-    } catch (error) {
-      console.error('❌ HomeScreen: Error loading locked apps:', error);
+    } else {
+      // FIRST TIME SETUP: If no locked apps exist, auto-lock our own app
+      console.log('🆕 First time setup - auto-locking our own app');
+      lockedSet.add(OUR_APP_PACKAGE);
+      
+      // Save this initial state
+      await AsyncStorage.setItem('lockedApps', JSON.stringify(Array.from(lockedSet)));
+      console.log('💾 Saved initial locked apps with our app');
     }
-  };
+
+    // ALWAYS ensure our own app is locked (security requirement)
+    if (!lockedSet.has(OUR_APP_PACKAGE)) {
+      console.log('🔒 Ensuring our app is locked (security requirement)');
+      lockedSet.add(OUR_APP_PACKAGE);
+      
+      // Save updated locked apps
+      await AsyncStorage.setItem('lockedApps', JSON.stringify(Array.from(lockedSet)));
+    }
+
+    console.log('🔒 Final locked apps set:', Array.from(lockedSet));
+    setLockedApps(lockedSet);
+
+    if (apps.length > 0) {
+      const updatedApps = apps.map(app => ({
+        ...app,
+        locked: lockedSet.has(app.packageName),
+      }));
+      setApps(updatedApps);
+      setFilteredApps(updatedApps);
+    }
+
+    const packageNamesArray = Array.from(lockedSet);
+    if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
+      await AppLockModule.setLockedApps(packageNamesArray);
+    }
+  } catch (error) {
+    console.error('❌ HomeScreen: Error loading locked apps:', error);
+  }
+};
 
   const saveLockedApps = async appsSet => {
     try {
@@ -264,6 +294,14 @@ const HomeScreen = () => {
       }
 
       setLockedApps(new Set(filteredApps));
+      
+      // Update apps list with new lock status
+      const updatedApps = apps.map(app => ({
+        ...app,
+        locked: filteredApps.includes(app.packageName),
+      }));
+      setApps(updatedApps);
+      setFilteredApps(updatedApps);
     } catch (error) {
       console.error('❌ Error saving locked apps:', error);
     }
@@ -327,54 +365,98 @@ const HomeScreen = () => {
     }
   };
 
-  const toggleAppLock = async (appId, appPackageName, appName) => {
+// In HomeScreen.js, update the toggleAppLock function:
+const toggleAppLock = async (appId, appPackageName, appName) => {
     console.log(`🔐 Toggling lock for: ${appPackageName} (${appName})`);
-
+    
+    // PREVENT UNLOCKING OUR OWN APP (Security requirement)
+    if (appPackageName === OUR_APP_PACKAGE) {
+        const isCurrentlyLocked = lockedApps.has(appPackageName);
+        
+        if (isCurrentlyLocked) {
+            // Trying to unlock our own app - NOT ALLOWED
+            console.log(`⛔ Cannot unlock our own app (security requirement)`);
+            
+            showAlert(
+                t('alerts.security_warning'),
+                t('home.cannot_unlock_applock'),
+                'warning',
+            );
+            
+            // Play error animation
+            Animated.sequence([
+                Animated.timing(scaleAnim, {
+                    toValue: 0.95,
+                    duration: 100,
+                    easing: Easing.ease,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(scaleAnim, {
+                    toValue: 1,
+                    duration: 100,
+                    easing: Easing.ease,
+                    useNativeDriver: true,
+                }),
+            ]).start();
+            
+            return;
+        }
+    }
+    
     Animated.sequence([
-      Animated.timing(scaleAnim, {
-        toValue: 0.95,
-        duration: 100,
-        easing: Easing.ease,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleAnim, {
-        toValue: 1,
-        duration: 100,
-        easing: Easing.ease,
-        useNativeDriver: true,
-      }),
+        Animated.timing(scaleAnim, {
+            toValue: 0.95,
+            duration: 100,
+            easing: Easing.ease,
+            useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+            toValue: 1,
+            duration: 100,
+            easing: Easing.ease,
+            useNativeDriver: true,
+        }),
     ]).start();
 
     const newLockedApps = new Set(lockedApps);
     const isCurrentlyLocked = newLockedApps.has(appPackageName);
 
     if (isCurrentlyLocked) {
-      newLockedApps.delete(appPackageName);
-      console.log(`🔓 Unlocked: ${appPackageName}`);
+        newLockedApps.delete(appPackageName);
+        console.log(`🔓 Unlocked: ${appPackageName}`);
     } else {
-      newLockedApps.add(appPackageName);
-      console.log(`🔒 Locked: ${appPackageName}`);
+        newLockedApps.add(appPackageName);
+        console.log(`🔒 Locked: ${appPackageName}`);
     }
 
+    // Update main apps list
     const updatedApps = apps.map(app =>
-      app.id === appId
-        ? {...app, locked: newLockedApps.has(app.packageName)}
-        : app,
+        app.id === appId
+            ? {...app, locked: newLockedApps.has(app.packageName)}
+            : app,
     );
     setApps(updatedApps);
     setLockedApps(newLockedApps);
 
+    // Update filtered apps
+    const updatedFilteredApps = filteredApps.map(app =>
+        app.id === appId
+            ? {...app, locked: newLockedApps.has(app.packageName)}
+            : app,
+    );
+    setFilteredApps(updatedFilteredApps);
+
     await saveLockedApps(newLockedApps);
 
-    // Show security warning when locking our own app
+    // Show security warning when locking our own app (this should only happen on initial setup)
     if (appPackageName === OUR_APP_PACKAGE && !isCurrentlyLocked) {
-      showAlert(
-        t('alerts.success'),
-        t('home.security_enabled_message'),
-        'info',
-      );
+        showAlert(
+            t('alerts.success'),
+            t('home.security_enabled_message'),
+            'info',
+        );
     }
-  };
+};
 
   const lockAllApps = async () => {
     showAlert(
@@ -424,49 +506,51 @@ const HomeScreen = () => {
     );
   };
 
-  const unlockAllApps = async () => {
+// In HomeScreen.js, update the unlockAllApps function:
+const unlockAllApps = async () => {
     showAlert(
-      t('alerts.unlock_all_apps'),
-      t('home.unlock_all_confirmation'),
-      'warning',
-      [
-        {
-          text: t('common.cancel'),
-          style: 'cancel',
-        },
-        {
-          text: t('alerts.unlock_all'),
-          onPress: async () => {
-            try {
-              const newLockedApps = new Set();
-              await saveLockedApps(newLockedApps);
+        t('alerts.unlock_all_apps'),
+        t('home.unlock_all_confirmation'),
+        'warning',
+        [
+            {
+                text: t('common.cancel'),
+                style: 'cancel',
+            },
+            {
+                text: t('alerts.unlock_all'),
+                onPress: async () => {
+                    try {
+                        // Create a new set with ONLY our own app (keep it locked)
+                        const newLockedApps = new Set([OUR_APP_PACKAGE]);
+                        await saveLockedApps(newLockedApps);
 
-              const updatedApps = apps.map(app => ({
-                ...app,
-                locked: false,
-              }));
-              setApps(updatedApps);
-              setFilteredApps(updatedApps);
+                        const updatedApps = apps.map(app => ({
+                            ...app,
+                            locked: app.packageName === OUR_APP_PACKAGE,
+                        }));
+                        setApps(updatedApps);
+                        setFilteredApps(updatedApps);
 
-              showAlert(
-                t('alerts.success'),
-                t('home.all_apps_unlocked'),
-                'success',
-              );
-            } catch (error) {
-              console.error('Error unlocking all apps:', error);
-              showAlert(
-                t('alerts.error'),
-                t('errors.operation_failed'),
-                'error',
-              );
-            }
-          },
-          style: 'default',
-        },
-      ],
+                        showAlert(
+                            t('alerts.success'),
+                            t('home.all_apps_unlocked_except_our'),
+                            'success',
+                        );
+                    } catch (error) {
+                        console.error('Error unlocking all apps:', error);
+                        showAlert(
+                            t('alerts.error'),
+                            t('errors.operation_failed'),
+                            'error',
+                        );
+                    }
+                },
+                style: 'default',
+            },
+        ],
     );
-  };
+};
 
   const renderAppItem = ({item}) => (
     <Animated.View style={[styles.appItem, {transform: [{scale: scaleAnim}]}]}>
@@ -562,8 +646,8 @@ const HomeScreen = () => {
       <Animated.ScrollView
         style={[styles.content, {opacity: contentOpacity}]}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled" // Add this
-        keyboardDismissMode="on-drag" // Add this
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
@@ -591,25 +675,39 @@ const HomeScreen = () => {
 
         {/* Stats Cards */}
         <View style={styles.statsContainer}>
-          <View style={styles.statItem}>
-            <View style={[styles.statIcon, styles.lockedStat]}>
-              <Icon name="lock" size={20} color="#FFFFFF" />
+          <TouchableOpacity 
+            style={styles.statItemContainer}
+            onPress={navigateToLockedApps}
+            activeOpacity={0.7}
+          >
+            <View style={styles.statItem}>
+              <View style={[styles.statIcon, styles.lockedStat]}>
+                <Icon name="lock" size={20} color="#FFFFFF" />
+              </View>
+              <View style={styles.statText}>
+                <Text style={styles.statNumber}>{lockedAppsCount}</Text>
+                <Text style={styles.statLabel}>{t('home.locked_apps')}</Text>
+              </View>
+              <Icon name="chevron-right" size={20} color="#666" style={styles.statChevron} />
             </View>
-            <View style={styles.statText}>
-              <Text style={styles.statNumber}>{lockedAppsCount}</Text>
-              <Text style={styles.statLabel}>{t('home.locked_apps')}</Text>
-            </View>
-          </View>
+          </TouchableOpacity>
 
-          <View style={styles.statItem}>
-            <View style={[styles.statIcon, styles.totalStat]}>
-              <Icon name="apps" size={20} color="#FFFFFF" />
+          <TouchableOpacity 
+            style={styles.statItemContainer}
+            onPress={navigateToAllApps}
+            activeOpacity={0.7}
+          >
+            <View style={styles.statItem}>
+              <View style={[styles.statIcon, styles.totalStat]}>
+                <Icon name="apps" size={20} color="#FFFFFF" />
+              </View>
+              <View style={styles.statText}>
+                <Text style={styles.statNumber}>{apps.length}</Text>
+                <Text style={styles.statLabel}>{t('home.total_apps')}</Text>
+              </View>
+              <Icon name="chevron-right" size={20} color="#666" style={styles.statChevron} />
             </View>
-            <View style={styles.statText}>
-              <Text style={styles.statNumber}>{apps.length}</Text>
-              <Text style={styles.statLabel}>{t('home.total_apps')}</Text>
-            </View>
-          </View>
+          </TouchableOpacity>
         </View>
 
         {/* Auto-lock Settings */}
@@ -684,7 +782,7 @@ const HomeScreen = () => {
                 console.log('🔍 Search bar focused');
                 setSearchFocused(true);
               }}
-              autoFocus={false} // Explicitly set to false
+              autoFocus={false}
               blurOnSubmit={false}
             />
           </Card.Content>
@@ -783,7 +881,7 @@ const HomeScreen = () => {
                 inputStyle={styles.searchInputFullscreen}
                 placeholderTextColor="#888"
                 elevation={0}
-                autoFocus={shouldAutoFocus} // Controlled by state
+                autoFocus={shouldAutoFocus}
                 onBlur={() => {
                   if (searchQuery === '') {
                     setSearchFocused(false);
@@ -1063,7 +1161,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '500',
   },
-  // Keep all existing styles from before...
   header: {
     backgroundColor: '#FFFFFF',
     elevation: 2,
@@ -1112,6 +1209,11 @@ const styles = StyleSheet.create({
     marginTop: 12,
     gap: 12,
   },
+  statItemContainer: {
+    flex: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
   statItem: {
     flex: 1,
     flexDirection: 'row',
@@ -1149,9 +1251,15 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   statLabel: {
-    fontSize: 13,
-    color: '#777',
-    fontWeight: '500',
+    // fontSize: 14,
+    // color: '#000',
+    // fontWeight: '00',
+      fontSize: 13,
+    fontWeight: '600',
+    color: '#333',
+  },
+  statChevron: {
+    marginLeft: 8,
   },
   settingsCard: {
     marginHorizontal: 16,

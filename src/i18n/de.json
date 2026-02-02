@@ -65,7 +65,12 @@
        "search_results": "Suchergebnisse",
     "apps_found": "Apps gefunden",
     "no_matching_apps": "Keine passenden Apps gefunden",
-    "search_suggestions": "Suchvorschläge"
+    "search_suggestions": "Suchvorschläge",
+      "locked_apps_desc": "Dies sind die Apps, die derzeit gesperrt sind",
+    "all_apps_desc": "Alle auf Ihrem Gerät installierten Apps",
+    "no_locked_apps": "Keine gesperrten Apps",
+    "no_locked_apps_desc": "Sie haben noch keine Apps gesperrt. Verwenden Sie die Schalter, um Apps zu sperren.",
+    "all_apps": "Alle Apps"
   },
   "setup": {
     "title": "Sicherheit einrichten",

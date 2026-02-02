@@ -65,7 +65,12 @@
        "search_results": "Resultados de Búsqueda",
     "apps_found": "aplicaciones encontradas",
     "no_matching_apps": "No se encontraron aplicaciones coincidentes",
-    "search_suggestions": "Sugerencias de Búsqueda"
+    "search_suggestions": "Sugerencias de Búsqueda",
+     "locked_apps_desc": "Estas son las aplicaciones que están actualmente bloqueadas",
+    "all_apps_desc": "Todas las aplicaciones instaladas en tu dispositivo",
+    "no_locked_apps": "Sin aplicaciones bloqueadas",
+    "no_locked_apps_desc": "Aún no has bloqueado ninguna aplicación. Usa los interruptores para bloquear aplicaciones.",
+    "all_apps": "Todas las aplicaciones"
   },
   "setup": {
     "title": "Configura tu seguridad",

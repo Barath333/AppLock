@@ -65,7 +65,12 @@
      "search_results": "Résultats de Recherche",
     "apps_found": "applications trouvées",
     "no_matching_apps": "Aucune application correspondante trouvée",
-    "search_suggestions": "Suggestions de Recherche"
+    "search_suggestions": "Suggestions de Recherche",
+       "locked_apps_desc": "Ce sont les applications actuellement verrouillées",
+    "all_apps_desc": "Toutes les applications installées sur votre appareil",
+    "no_locked_apps": "Aucune application verrouillée",
+    "no_locked_apps_desc": "Vous n'avez encore verrouillé aucune application. Utilisez les interrupteurs pour verrouiller les applications.",
+    "all_apps": "Toutes les applications"
   },
   "setup": {
     "title": "Configurez votre sécurité",

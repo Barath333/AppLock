@@ -65,7 +65,12 @@
      "search_results": "搜索结果",
     "apps_found": "个应用已找到",
     "no_matching_apps": "未找到匹配的应用",
-    "search_suggestions": "搜索建议"
+    "search_suggestions": "搜索建议",
+      "locked_apps_desc": "这些是当前已锁定的应用",
+    "all_apps_desc": "您设备上所有已安装的应用",
+    "no_locked_apps": "没有锁定的应用",
+    "no_locked_apps_desc": "您尚未锁定任何应用。使用开关来锁定应用。",
+    "all_apps": "所有应用"
   },
   "setup": {
     "title": "设置您的安全",

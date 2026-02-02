@@ -7,6 +7,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Dimensions,
 } from 'react-native';
 import {TextInput, Button, Card, HelperText} from 'react-native-paper';
 import {useNavigation} from '@react-navigation/native';
@@ -15,6 +16,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Keychain from 'react-native-keychain';
 import {useAlert} from '../contexts/AlertContext';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+
+const {width} = Dimensions.get('window');
 
 const ForgotPinResetScreen = () => {
   const navigation = useNavigation();
@@ -110,7 +113,7 @@ const ForgotPinResetScreen = () => {
           {
             text: t('common.ok'),
             onPress: () => {
-        navigation.navigate('Main', {screen: 'Home'});
+              navigation.navigate('Main', {screen: 'Home'});
             },
           },
         ],
@@ -126,60 +129,102 @@ const ForgotPinResetScreen = () => {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}>
+        
+        {/* Header Section */}
+        <View style={styles.headerContainer}>
+          <View style={styles.iconContainer}>
+            <Icon name="lock-reset" size={80} color="#1E88E5" />
+          </View>
+          <Text style={styles.title}>
+            {step === 1
+              ? t('forgot_pin.reset_password')
+              : t('forgot_pin.set_new_pin')}
+          </Text>
+          <Text style={styles.subtitle}>
+            {step === 1
+              ? t('forgot_pin.security_question_required')
+              : t('forgot_pin.enter_new_pin')}
+          </Text>
+        </View>
+
+        {/* Step Indicator */}
+        <View style={styles.stepIndicatorContainer}>
+          <View style={styles.stepWrapper}>
+            <View style={styles.stepItem}>
+              <View style={[
+                styles.stepCircle, 
+                step >= 1 && styles.stepCircleActive
+              ]}>
+                <Text style={[
+                  styles.stepNumber,
+                  step >= 1 && styles.stepNumberActive
+                ]}>1</Text>
+              </View>
+              <Text style={[
+                styles.stepLabel,
+                step >= 1 && styles.stepLabelActive
+              ]}>
+                {t('forgot_pin.verify_answer')}
+              </Text>
+            </View>
+            
+            <View style={[
+              styles.stepConnector,
+              step >= 2 && styles.stepConnectorActive
+            ]} />
+            
+            <View style={styles.stepItem}>
+              <View style={[
+                styles.stepCircle, 
+                step >= 2 && styles.stepCircleActive
+              ]}>
+                <Text style={[
+                  styles.stepNumber,
+                  step >= 2 && styles.stepNumberActive
+                ]}>2</Text>
+              </View>
+              <Text style={[
+                styles.stepLabel,
+                step >= 2 && styles.stepLabelActive
+              ]}>
+                {t('forgot_pin.set_pin')}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Content Card */}
         <Card style={styles.card}>
-          <Card.Content>
-            <View style={styles.header}>
-              <Icon name="lock-reset" size={48} color="#1E88E5" />
-              <Text style={styles.title}>
-                {step === 1
-                  ? t('forgot_pin.reset_password')
-                  : t('forgot_pin.set_new_pin')}
-              </Text>
-              <Text style={styles.subtitle}>
-                {step === 1
-                  ? t('forgot_pin.security_question_required')
-                  : t('forgot_pin.enter_new_pin')}
-              </Text>
-            </View>
-
-            {/* Step indicator */}
-            <View style={styles.stepIndicator}>
-              <View style={[styles.step, step === 1 && styles.activeStep]}>
-                <Text style={[styles.stepText, step === 1 && styles.activeStepText]}>
-                  1
-                </Text>
-                <Text style={styles.stepLabel}>{t('forgot_pin.verify_answer')}</Text>
-              </View>
-              <View style={styles.stepLine} />
-              <View style={[styles.step, step === 2 && styles.activeStep]}>
-                <Text style={[styles.stepText, step === 2 && styles.activeStepText]}>
-                  2
-                </Text>
-                <Text style={styles.stepLabel}>{t('forgot_pin.set_pin')}</Text>
-              </View>
-            </View>
-
+          <Card.Content style={styles.cardContent}>
+            
             {/* Step 1: Security Question */}
             {step === 1 && (
-              <View style={styles.stepContainer}>
-                {securityQuestion ? (
-                  <View style={styles.questionContainer}>
-                    <Text style={styles.questionLabel}>
-                      {t('forgot_pin.your_security_question')}
-                    </Text>
-                    <Card style={styles.questionCard}>
+              <View style={styles.stepContent}>
+                <View style={styles.questionSection}>
+                  <Text style={styles.sectionTitle}>
+                    {t('forgot_pin.your_security_question')}
+                  </Text>
+                  
+                  {securityQuestion ? (
+                    <Card style={styles.questionCard} mode="contained">
                       <Card.Content>
                         <Text style={styles.questionText}>{securityQuestion}</Text>
                       </Card.Content>
                     </Card>
-                  </View>
-                ) : (
-                  <Text style={styles.noQuestionText}>
-                    {t('forgot_pin.no_security_question_set')}
-                  </Text>
-                )}
+                  ) : (
+                    <View style={styles.warningContainer}>
+                      <Icon name="alert-circle-outline" size={24} color="#FF6B6B" />
+                      <Text style={styles.warningText}>
+                        {t('forgot_pin.no_security_question_set')}
+                      </Text>
+                    </View>
+                  )}
+                </View>
 
                 <TextInput
                   label={t('forgot_pin.enter_your_answer')}
@@ -189,86 +234,122 @@ const ForgotPinResetScreen = () => {
                   mode="outlined"
                   placeholder={t('forgot_pin.answer_placeholder')}
                   secureTextEntry
+                  outlineColor="#E0E0E0"
+                  activeOutlineColor="#1E88E5"
+                  theme={{ roundness: 10 }}
                 />
 
-                {error ? <HelperText type="error">{error}</HelperText> : null}
+                {error ? (
+                  <View style={styles.errorContainer}>
+                    <HelperText type="error" style={styles.errorText}>
+                      {error}
+                    </HelperText>
+                  </View>
+                ) : null}
 
-                <Button
-                  mode="contained"
-                  onPress={verifySecurityAnswer}
-                  style={styles.button}
-                  loading={isLoading}
-                  disabled={isLoading || !securityAnswer.trim()}>
-                  {t('forgot_pin.verify_and_continue')}
-                </Button>
+                <View style={styles.buttonContainer}>
+                  <Button
+                    mode="contained"
+                    onPress={verifySecurityAnswer}
+                    style={styles.primaryButton}
+                    loading={isLoading}
+                    disabled={isLoading || !securityAnswer.trim()}
+                    contentStyle={styles.buttonContent}
+                    labelStyle={styles.buttonLabel}>
+                    {t('forgot_pin.verify_and_continue')}
+                  </Button>
 
-                <Button
-                  mode="text"
-                  onPress={() => navigation.navigate('SecurityQuestion')}
-                  style={styles.secondaryButton}
-                  textColor="#1E88E5">
-                  {t('forgot_pin.set_security_question')}
-                </Button>
+                  {/* <Button
+                    mode="text"
+                    onPress={() => navigation.navigate('SecurityQuestion')}
+                    style={styles.linkButton}
+                    textColor="#1E88E5"
+                    labelStyle={styles.linkButtonLabel}>
+                    {t('forgot_pin.set_security_question')}
+                  </Button> */}
+                </View>
               </View>
             )}
 
             {/* Step 2: New PIN */}
             {step === 2 && (
-              <View style={styles.stepContainer}>
-                <Text style={styles.instruction}>
+              <View style={styles.stepContent}>
+                <Text style={styles.instructionText}>
                   {t('forgot_pin.new_pin_instruction')}
                 </Text>
 
-                <TextInput
-                  label={t('setup.enter_pin')}
-                  value={newPin}
-                  onChangeText={setNewPin}
-                  style={styles.input}
-                  mode="outlined"
-                  keyboardType="numeric"
-                  maxLength={6}
-                  secureTextEntry={!showPin}
-                  right={
-                    <TextInput.Icon
-                      icon={showPin ? 'eye-off' : 'eye'}
-                      onPress={() => setShowPin(!showPin)}
-                    />
-                  }
-                />
+                <View style={styles.inputGroup}>
+                  <TextInput
+                    label={t('setup.enter_pin')}
+                    value={newPin}
+                    onChangeText={setNewPin}
+                    style={styles.pinInput}
+                    mode="outlined"
+                    keyboardType="numeric"
+                    maxLength={6}
+                    secureTextEntry={!showPin}
+                    outlineColor="#E0E0E0"
+                    activeOutlineColor="#1E88E5"
+                    theme={{ roundness: 10 }}
+                    left={<TextInput.Icon icon="lock" size={20} />}
+                    right={
+                      <TextInput.Icon
+                        icon={showPin ? 'eye-off' : 'eye'}
+                        onPress={() => setShowPin(!showPin)}
+                        forceTextInputFocus={false}
+                      />
+                    }
+                  />
 
-                <TextInput
-                  label={t('setup.confirm_pin')}
-                  value={confirmPin}
-                  onChangeText={setConfirmPin}
-                  style={styles.input}
-                  mode="outlined"
-                  keyboardType="numeric"
-                  maxLength={6}
-                  secureTextEntry={!showPin}
-                  right={
-                    <TextInput.Icon
-                      icon={showPin ? 'eye-off' : 'eye'}
-                      onPress={() => setShowPin(!showPin)}
-                    />
-                  }
-                />
+                  <TextInput
+                    label={t('setup.confirm_pin')}
+                    value={confirmPin}
+                    onChangeText={setConfirmPin}
+                    style={styles.pinInput}
+                    mode="outlined"
+                    keyboardType="numeric"
+                    maxLength={6}
+                    secureTextEntry={!showPin}
+                    outlineColor="#E0E0E0"
+                    activeOutlineColor="#1E88E5"
+                    theme={{ roundness: 10 }}
+                    left={<TextInput.Icon icon="lock-check" size={20} />}
+                    right={
+                      <TextInput.Icon
+                        icon={showPin ? 'eye-off' : 'eye'}
+                        onPress={() => setShowPin(!showPin)}
+                        forceTextInputFocus={false}
+                      />
+                    }
+                  />
+                </View>
 
-                {error ? <HelperText type="error">{error}</HelperText> : null}
+                {error ? (
+                  <View style={styles.errorContainer}>
+                    <HelperText type="error" style={styles.errorText}>
+                      {error}
+                    </HelperText>
+                  </View>
+                ) : null}
 
-                <View style={styles.buttonRow}>
+                <View style={styles.actionButtons}>
                   <Button
                     mode="outlined"
                     onPress={() => setStep(1)}
-                    style={styles.backButton}
-                    textColor="#666">
+                    style={styles.secondaryButton}
+                    textColor="#666"
+                    contentStyle={styles.buttonContent}
+                    labelStyle={styles.buttonLabel}>
                     {t('common.back')}
                   </Button>
                   <Button
                     mode="contained"
                     onPress={resetPin}
-                    style={styles.button}
+                    style={styles.primaryButton}
                     loading={isLoading}
-                    disabled={isLoading || !newPin || !confirmPin}>
+                    disabled={isLoading || !newPin || !confirmPin}
+                    contentStyle={styles.buttonContent}
+                    labelStyle={styles.buttonLabel}>
                     {t('forgot_pin.reset_pin')}
                   </Button>
                 </View>
@@ -284,126 +365,215 @@ const ForgotPinResetScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFF',
+    backgroundColor: '#F8F9FA',
+  },
+  scrollContent: {
+    flexGrow: 1,
     padding: 16,
+    paddingTop: 40,
   },
-  card: {
-    borderRadius: 12,
-    elevation: 4,
-  },
-  header: {
+  headerContainer: {
     alignItems: 'center',
     marginBottom: 30,
+  },
+  iconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#E3F2FD',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+    borderWidth: 3,
+    borderColor: '#BBDEFB',
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginTop: 16,
-    color: '#1E88E5',
+    color: '#1A237E',
+    marginBottom: 8,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 16,
     textAlign: 'center',
-    marginTop: 8,
     color: '#666',
-    lineHeight: 20,
+    lineHeight: 22,
+    paddingHorizontal: 20,
   },
-  stepIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+  stepIndicatorContainer: {
     marginBottom: 30,
   },
-  step: {
+  stepWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+  },
+  stepItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  stepCircle: {
     width: 40,
     height: 40,
     borderRadius: 20,
     backgroundColor: '#E0E0E0',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
   },
-  activeStep: {
+  stepCircleActive: {
     backgroundColor: '#1E88E5',
+    borderColor: '#0D47A1',
   },
-  stepText: {
-    fontSize: 16,
+  stepNumber: {
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#666',
   },
-  activeStepText: {
+  stepNumberActive: {
     color: '#FFF',
   },
   stepLabel: {
-    fontSize: 12,
+    fontSize: 14,
+    fontWeight: '600',
     color: '#666',
+    marginTop: 8,
     textAlign: 'center',
-    marginTop: 4,
-    width: 80,
   },
-  stepLine: {
-    width: 40,
-    height: 2,
+  stepLabelActive: {
+    color: '#1E88E5',
+  },
+  stepConnector: {
+    flex: 1,
+    height: 3,
     backgroundColor: '#E0E0E0',
-    marginHorizontal: 8,
+    marginHorizontal: 10,
   },
-  stepContainer: {
-    marginTop: 10,
+  stepConnectorActive: {
+    backgroundColor: '#1E88E5',
   },
-  questionContainer: {
+  card: {
+    borderRadius: 16,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    backgroundColor: '#FFF',
     marginBottom: 20,
   },
-  questionLabel: {
+  cardContent: {
+    padding: 24,
+  },
+  stepContent: {
+    width: '100%',
+  },
+  questionSection: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 8,
+    marginBottom: 12,
+    paddingLeft: 4,
   },
   questionCard: {
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
+    backgroundColor: '#F3F8FF',
+    borderWidth: 1,
+    borderColor: '#D1E3FF',
+    borderRadius: 12,
   },
   questionText: {
     fontSize: 16,
-    color: '#333',
+    color: '#1E88E5',
     textAlign: 'center',
-    padding: 8,
+    paddingVertical: 12,
+    fontWeight: '500',
   },
-  noQuestionText: {
-    fontSize: 16,
-    color: '#FF6B6B',
-    textAlign: 'center',
-    marginBottom: 20,
-    padding: 16,
+  warningContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#FFF5F5',
-    borderRadius: 8,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FFE0E0',
+  },
+  warningText: {
+    fontSize: 14,
+    color: '#FF6B6B',
+    marginLeft: 12,
+    flex: 1,
   },
   input: {
     marginBottom: 16,
     backgroundColor: 'white',
+    fontSize: 16,
   },
-  instruction: {
-    fontSize: 14,
+  pinInput: {
+    marginBottom: 16,
+    backgroundColor: 'white',
+    fontSize: 16,
+  },
+  inputGroup: {
+    marginBottom: 8,
+  },
+  instructionText: {
+    fontSize: 15,
     color: '#666',
     textAlign: 'center',
-    marginBottom: 20,
-    lineHeight: 20,
+    marginBottom: 24,
+    lineHeight: 22,
+    paddingHorizontal: 10,
   },
-  button: {
-    marginTop: 10,
-    borderRadius: 8,
+  buttonContainer: {
+    marginTop: 8,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    gap: 12,
+  },
+  primaryButton: {
+    borderRadius: 12,
     backgroundColor: '#1E88E5',
+    shadowColor: '#1E88E5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
   secondaryButton: {
-    marginTop: 12,
-  },
-  backButton: {
+    borderRadius: 12,
+    borderColor: '#666',
+    borderWidth: 1,
     flex: 1,
-    marginRight: 8,
   },
-  buttonRow: {
-    flexDirection: 'row',
-    marginTop: 10,
+  linkButton: {
+    marginTop: 16,
+  },
+  buttonContent: {
+    height: 52,
+  },
+  buttonLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  linkButtonLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  errorContainer: {
+    marginBottom: 16,
+  },
+  errorText: {
+    fontSize: 14,
+    textAlign: 'center',
   },
 });
 

@@ -468,13 +468,13 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin, biometric
                         size={64}
                         color="#1E88E5"
                       />
-   <Text style={styles.biometricText}>
+   {/* <Text style={styles.biometricText}>
   {Platform.OS === 'ios'
     ? t('lock_screen.touch_to_use_face_id')
     : biometricsType === 'Fingerprint'
       ? t('lock_screen.touch_to_use_fingerprint')
       : t('lock_screen.touch_to_authenticate')}
-</Text>
+</Text> */}
 <Text style={styles.biometricSubText}>
   {t('lock_screen.tap_to_authenticate')}
 </Text>
