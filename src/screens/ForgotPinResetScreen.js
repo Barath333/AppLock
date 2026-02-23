@@ -1,5 +1,4 @@
-// ForgotPinResetScreen.js
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useState, useCallback} from 'react';
 import {
   View,
   Text,
@@ -8,9 +7,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
+  BackHandler,
 } from 'react-native';
 import {TextInput, Button, Card, HelperText} from 'react-native-paper';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useRoute, useFocusEffect} from '@react-navigation/native';
 import {useTranslation} from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Keychain from 'react-native-keychain';
@@ -21,10 +21,11 @@ const {width} = Dimensions.get('window');
 
 const ForgotPinResetScreen = () => {
   const navigation = useNavigation();
+  const route = useRoute();
   const {t} = useTranslation();
   const {showAlert} = useAlert();
   
-  const [step, setStep] = useState(1); // 1: Security question, 2: New PIN
+  const [step, setStep] = useState(1);
   const [securityAnswer, setSecurityAnswer] = useState('');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
@@ -32,6 +33,47 @@ const ForgotPinResetScreen = () => {
   const [securityQuestion, setSecurityQuestion] = useState('');
   const [showPin, setShowPin] = useState(false);
   const [error, setError] = useState('');
+
+  const { onResetComplete, onCancel } = route.params || {};
+
+  // Intercept hardware back button
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        if (onCancel) {
+          onCancel();
+        } else {
+          // Fallback: just go back (should not happen)
+          navigation.goBack();
+        }
+        return true; // prevent default back action
+      };
+
+      BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => BackHandler.removeEventListener('hardwareBackPress', onBackPress);
+    }, [onCancel, navigation])
+  );
+
+  // Override the header back button
+  useEffect(() => {
+    navigation.setOptions({
+      headerLeft: () => (
+        <Icon.Button
+          name="arrow-left"
+          size={24}
+          color="#1E88E5"
+          backgroundColor="transparent"
+          onPress={() => {
+            if (onCancel) {
+              onCancel();
+            } else {
+              navigation.goBack();
+            }
+          }}
+        />
+      ),
+    });
+  }, [navigation, onCancel]);
 
   useEffect(() => {
     loadSecurityQuestion();
@@ -65,7 +107,6 @@ const ForgotPinResetScreen = () => {
       }
 
       if (securityAnswer.trim().toLowerCase() === savedAnswer.toLowerCase()) {
-        // Answer is correct, proceed to step 2
         setStep(2);
         setSecurityAnswer('');
         setError('');
@@ -81,7 +122,6 @@ const ForgotPinResetScreen = () => {
   };
 
   const resetPin = async () => {
-    // Validate PIN
     if (newPin.length < 4) {
       setError(t('errors.pin_too_short'));
       return;
@@ -96,13 +136,11 @@ const ForgotPinResetScreen = () => {
     setError('');
 
     try {
-      // Save new PIN to Keychain
       await Keychain.setGenericPassword('applock_user', newPin, {
         service: 'applock_service',
         accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
       });
 
-      // Clear failed attempts
       await AsyncStorage.multiRemove(['failed_attempts', 'lock_until']);
 
       showAlert(
@@ -113,7 +151,10 @@ const ForgotPinResetScreen = () => {
           {
             text: t('common.ok'),
             onPress: () => {
-              navigation.navigate('Main', {screen: 'Home'});
+              if (onResetComplete) {
+                onResetComplete();
+              }
+              navigation.goBack();
             },
           },
         ],
@@ -135,7 +176,6 @@ const ForgotPinResetScreen = () => {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}>
         
-        {/* Header Section */}
         <View style={styles.headerContainer}>
           <View style={styles.iconContainer}>
             <Icon name="lock-reset" size={80} color="#1E88E5" />
@@ -152,7 +192,6 @@ const ForgotPinResetScreen = () => {
           </Text>
         </View>
 
-        {/* Step Indicator */}
         <View style={styles.stepIndicatorContainer}>
           <View style={styles.stepWrapper}>
             <View style={styles.stepItem}>
@@ -198,11 +237,9 @@ const ForgotPinResetScreen = () => {
           </View>
         </View>
 
-        {/* Content Card */}
         <Card style={styles.card}>
           <Card.Content style={styles.cardContent}>
             
-            {/* Step 1: Security Question */}
             {step === 1 && (
               <View style={styles.stepContent}>
                 <View style={styles.questionSection}>
@@ -258,20 +295,10 @@ const ForgotPinResetScreen = () => {
                     labelStyle={styles.buttonLabel}>
                     {t('forgot_pin.verify_and_continue')}
                   </Button>
-
-                  {/* <Button
-                    mode="text"
-                    onPress={() => navigation.navigate('SecurityQuestion')}
-                    style={styles.linkButton}
-                    textColor="#1E88E5"
-                    labelStyle={styles.linkButtonLabel}>
-                    {t('forgot_pin.set_security_question')}
-                  </Button> */}
                 </View>
               </View>
             )}
 
-            {/* Step 2: New PIN */}
             {step === 2 && (
               <View style={styles.stepContent}>
                 <Text style={styles.instructionText}>
@@ -554,19 +581,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flex: 1,
   },
-  linkButton: {
-    marginTop: 16,
-  },
   buttonContent: {
     height: 52,
   },
   buttonLabel: {
     fontSize: 16,
     fontWeight: '600',
-  },
-  linkButtonLabel: {
-    fontSize: 14,
-    fontWeight: '500',
   },
   errorContainer: {
     marginBottom: 16,

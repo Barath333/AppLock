@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,10 +11,10 @@ import {
   Image,
   LogBox,
   TouchableOpacity,
-  KeyboardAvoidingView,
   Platform,
   TouchableWithoutFeedback,
   Keyboard,
+  InteractionManager,
 } from 'react-native';
 import {
   Searchbar,
@@ -25,645 +25,29 @@ import {
   Modal,
   Portal,
 } from 'react-native-paper';
-import {useNavigation, useFocusEffect} from '@react-navigation/native';
-import {useTranslation} from 'react-i18next';
-import {NativeModules} from 'react-native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useTranslation } from 'react-i18next';
+import { NativeModules } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {useAlert} from '../contexts/AlertContext';
-import {RefreshControl, ScrollView} from 'react-native-gesture-handler';
+import { useAlert } from '../contexts/AlertContext';
+import { RefreshControl, ScrollView } from 'react-native-gesture-handler';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-const {AppListModule, AppLockModule} = NativeModules;
-const {width, height} = Dimensions.get('window');
+const { AppListModule, AppLockModule } = NativeModules;
+const { width, height } = Dimensions.get('window');
 
 LogBox.ignoreLogs(['new NativeEventEmitter']);
 
 const OUR_APP_PACKAGE = 'com.applock';
 
-const HomeScreen = () => {
-  const navigation = useNavigation();
-  const {t} = useTranslation();
-  const {showAlert} = useAlert();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [apps, setApps] = useState([]);
-  const [filteredApps, setFilteredApps] = useState([]);
-  const [lockedApps, setLockedApps] = useState(new Set());
-  const [scaleAnim] = useState(new Animated.Value(1));
-  const [autoLockNewApps, setAutoLockNewApps] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [showSecurityQuestionModal, setShowSecurityQuestionModal] = useState(false);
-  const [hasCheckedSecurityQuestion, setHasCheckedSecurityQuestion] = useState(false);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchAnimation] = useState(new Animated.Value(0));
-  const [shouldAutoFocus, setShouldAutoFocus] = useState(false);
-  const [isFirstSetup, setIsFirstSetup] = useState(true);
-
-  useEffect(() => {
-    if (searchFocused) {
-      Animated.timing(searchAnimation, {
-        toValue: 1,
-        duration: 300,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }).start(() => {
-        setTimeout(() => {
-          setShouldAutoFocus(true);
-        }, 100);
-      });
-    } else {
-      setShouldAutoFocus(false);
-      Animated.timing(searchAnimation, {
-        toValue: 0,
-        duration: 300,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }).start();
-    }
-  }, [searchFocused]);
-
-useFocusEffect(
-  React.useCallback(() => {
-    console.log('🏠 HomeScreen focused - refreshing data');
-    loadSettings();
-    loadLockedApps();
-    loadInstalledApps();
-    checkSecurityQuestion();
-    
-    // Ensure our app is locked if security question is set
-    ensureAppLockIsLocked();
-    
-    Keyboard.dismiss();
-    
-    return () => {
-      setSearchFocused(false);
-      setShouldAutoFocus(false);
-      Keyboard.dismiss();
-    };
-  }, []),
-);
-
-useEffect(() => {
-  console.log('🏠 HomeScreen mounted');
-  loadSettings();
-  loadInstalledApps();
-  loadLockedApps();
-  
-  // Ensure our app is locked if security question is set
-  ensureAppLockIsLocked();
-  
-  Keyboard.dismiss();
-  
-  return () => {
-    Keyboard.dismiss();
-  };
-}, []);
-
-  useEffect(() => {
-    const keyboardDidShowListener = Keyboard.addListener(
-      'keyboardDidShow',
-      () => {
-        console.log('⌨️ Keyboard shown');
-      }
-    );
-    
-    const keyboardDidHideListener = Keyboard.addListener(
-      'keyboardDidHide',
-      () => {
-        console.log('⌨️ Keyboard hidden');
-        if (searchFocused && searchQuery === '') {
-          setSearchFocused(false);
-        }
-      }
-    );
-
-    return () => {
-      keyboardDidShowListener.remove();
-      keyboardDidHideListener.remove();
-    };
-  }, [searchFocused, searchQuery]);
-
-  useEffect(() => {
-    if (searchQuery === '') {
-      setFilteredApps(apps);
-    } else {
-      setFilteredApps(
-        apps.filter(app =>
-          app.name.toLowerCase().includes(searchQuery.toLowerCase()),
-        ),
-      );
-    }
-  }, [searchQuery, apps]);
-
-  // Function to navigate to locked apps screen
-  const navigateToLockedApps = () => {
-    const lockedAppsList = apps.filter(app => app.locked);
-    navigation.navigate('AppsList', {
-      title: t('home.locked_apps'),
-      apps: lockedAppsList,
-      type: 'locked',
-    });
-  };
-
-  // Function to navigate to all apps screen
-  const navigateToAllApps = () => {
-    navigation.navigate('AppsList', {
-      title: t('home.all_apps'),
-      apps: apps,
-      type: 'all',
-    });
-  };
-
-const checkSecurityQuestion = async () => {
-  try {
-    if (hasCheckedSecurityQuestion) return;
-    
-    const securityQuestion = await AsyncStorage.getItem('security_question');
-    const securityAnswer = await AsyncStorage.getItem('security_answer');
-    
-    if (!securityQuestion || !securityAnswer) {
-      console.log('⚠️ Security question not set - showing mandatory modal');
-      
-      // Small delay to ensure UI is ready
-      setTimeout(() => {
-        setShowSecurityQuestionModal(true);
-      }, 1000);
-    } else {
-      console.log('✅ Security question exists');
-    }
-    setHasCheckedSecurityQuestion(true);
-  } catch (error) {
-    console.error('Error checking security question:', error);
-  }
-};
-
-  const loadSettings = async () => {
-    try {
-      const autoLock = await AppLockModule.getAutoLockNewApps();
-      setAutoLockNewApps(autoLock);
-      console.log('🔄 Auto-lock new apps setting:', autoLock);
-    } catch (error) {
-      console.error('Error loading settings:', error);
-    }
-  };
-
-  const toggleAutoLockNewApps = async () => {
-    const newValue = !autoLockNewApps;
-    try {
-      await AppLockModule.setAutoLockNewApps(newValue);
-      setAutoLockNewApps(newValue);
-      showAlert(
-        t('alerts.success'),
-        newValue ? t('home.auto_lock_enabled') : t('home.auto_lock_disabled'),
-        'success',
-      );
-    } catch (error) {
-      console.error('Error toggling auto-lock:', error);
-      showAlert(t('alerts.error'), t('errors.setting_update_failed'), 'error');
-    }
-  };
-const loadLockedApps = async () => {
-  try {
-    console.log('📦 HomeScreen: Loading locked apps');
-    const savedLockedApps = await AsyncStorage.getItem('lockedApps');
-    let lockedSet = new Set();
-
-    if (savedLockedApps) {
-      let lockedAppsArray;
-      try {
-        lockedAppsArray = JSON.parse(savedLockedApps);
-        console.log('📋 Raw locked apps from storage:', lockedAppsArray);
-      } catch (e) {
-        console.error('❌ Error parsing locked apps:', e);
-        await AsyncStorage.removeItem('lockedApps');
-        lockedAppsArray = [];
-      }
-
-      if (Array.isArray(lockedAppsArray) && lockedAppsArray.length > 0) {
-        lockedAppsArray.forEach(item => {
-          let packageName;
-          if (typeof item === 'string') {
-            packageName = item;
-          } else if (typeof item === 'object' && item.packageName) {
-            packageName = item.packageName;
-          }
-
-          if (packageName) {
-            lockedSet.add(packageName);
-          }
-        });
-      }
-    }
-
-    console.log('🔒 Final locked apps set:', Array.from(lockedSet));
-    setLockedApps(lockedSet);
-
-    if (apps.length > 0) {
-      const updatedApps = apps.map(app => ({
-        ...app,
-        locked: lockedSet.has(app.packageName),
-      }));
-      setApps(updatedApps);
-      setFilteredApps(updatedApps);
-    }
-
-    const packageNamesArray = Array.from(lockedSet);
-    if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
-      await AppLockModule.setLockedApps(packageNamesArray);
-    }
-  } catch (error) {
-    console.error('❌ HomeScreen: Error loading locked apps:', error);
-  }
-};
-
-// Helper function for actual locking
-const performAppLock = async () => {
-  const savedLockedApps = await AsyncStorage.getItem('lockedApps');
-  
-  let lockedSet = new Set();
-  
-  if (savedLockedApps) {
-    try {
-      const lockedAppsArray = JSON.parse(savedLockedApps);
-      lockedAppsArray.forEach(item => {
-        const pkg = typeof item === 'string' ? item : item.packageName;
-        if (pkg) {
-          lockedSet.add(pkg);
-        }
-      });
-    } catch (e) {
-      console.error('Error parsing locked apps:', e);
-    }
-  }
-  
-  // Check if our app is already locked
-  if (!lockedSet.has(OUR_APP_PACKAGE)) {
-    console.log('🔒 Locking our app for security');
-    lockedSet.add(OUR_APP_PACKAGE);
-    
-    // Save updated locked apps
-    await AsyncStorage.setItem('lockedApps', JSON.stringify(Array.from(lockedSet)));
-    
-    // Update native module
-    if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
-      await AppLockModule.setLockedApps(Array.from(lockedSet));
-    }
-    
-    // Update UI state
-    setLockedApps(lockedSet);
-    
-    // Update apps list
-    if (apps.length > 0) {
-      const updatedApps = apps.map(app => ({
-        ...app,
-        locked: lockedSet.has(app.packageName),
-      }));
-      setApps(updatedApps);
-      setFilteredApps(updatedApps);
-    }
-    
-    console.log('✅ App Lock is now locked');
-  } else {
-    console.log('🔒 App Lock is already locked');
-  }
-};
-
-const ensureAppLockIsLocked = async () => {
-  try {
-    console.log('🔍 Ensuring App Lock is locked...');
-    
-    // Get all data in parallel to avoid race conditions
-    const [securityQuestion, securityAnswer, savedLockedApps] = await Promise.all([
-      AsyncStorage.getItem('security_question'),
-      AsyncStorage.getItem('security_answer'),
-      AsyncStorage.getItem('lockedApps')
-    ]);
-    
-    if (securityQuestion && securityAnswer) {
-      console.log('✅ Security question exists');
-      
-      let lockedSet = new Set();
-      
-      if (savedLockedApps) {
-        try {
-          const lockedAppsArray = JSON.parse(savedLockedApps);
-          lockedAppsArray.forEach(item => {
-            const pkg = typeof item === 'string' ? item : item.packageName;
-            if (pkg) lockedSet.add(pkg);
-          });
-        } catch (e) {
-          console.error('Error parsing locked apps:', e);
-        }
-      }
-      
-      // Check if our app is already locked
-      if (!lockedSet.has(OUR_APP_PACKAGE)) {
-        console.log('🔒 Locking our app for security');
-        lockedSet.add(OUR_APP_PACKAGE);
-        
-        // Save updated locked apps and flag
-        await AsyncStorage.multiSet([
-          ['lockedApps', JSON.stringify(Array.from(lockedSet))],
-          ['just_set_security_question', 'true']
-        ]);
-        
-        // Update UI state immediately
-        setLockedApps(lockedSet);
-        
-        // Update apps list if available
-        if (apps.length > 0) {
-          const updatedApps = apps.map(app => ({
-            ...app,
-            locked: lockedSet.has(app.packageName),
-          }));
-          setApps(updatedApps);
-          setFilteredApps(updatedApps);
-        }
-        
-        console.log('✅ App Lock is now locked');
-      } else {
-        console.log('🔒 App Lock is already locked');
-      }
-    }
-  } catch (error) {
-    console.error('❌ Error ensuring App Lock is locked:', error);
-  }
-};
-
-const saveLockedApps = async appsSet => {
-  try {
-    const filteredApps = Array.from(appsSet);
-    console.log('💾 Saving locked apps:', filteredApps);
-
-    await AsyncStorage.setItem('lockedApps', JSON.stringify(filteredApps));
-    if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
-      await AppLockModule.setLockedApps(filteredApps);
-    }
-
-    setLockedApps(new Set(filteredApps));
-    
-    // Update apps list with new lock status
-    const updatedApps = apps.map(app => ({
-      ...app,
-      locked: filteredApps.includes(app.packageName),
-    }));
-    setApps(updatedApps);
-    setFilteredApps(updatedApps);
-  } catch (error) {
-    console.error('❌ Error saving locked apps:', error);
-  }
-};
-
-  const loadInstalledApps = async () => {
-    try {
-      setIsRefreshing(true);
-      console.log('📱 Loading installed apps...');
-      const installedApps = await AppListModule.getInstalledApps();
-      console.log(`📱 Loaded ${installedApps.length} apps`);
-
-      const currentLockedApps = await AsyncStorage.getItem('lockedApps');
-      const lockedSet = new Set();
-
-      if (currentLockedApps) {
-        try {
-          const lockedArray = JSON.parse(currentLockedApps);
-          lockedArray.forEach(item => {
-            const pkg = typeof item === 'string' ? item : item.packageName;
-            if (pkg) {
-              lockedSet.add(pkg);
-            }
-          });
-        } catch (e) {
-          console.error('Error parsing locked apps:', e);
-        }
-      }
-
-      const appsWithLockStatus = installedApps
-        .filter(app => {
-          const systemApps = [
-            'android',
-            'com.android',
-            'com.google.android',
-            'com.sec.android',
-            'com.samsung',
-            'com.orange',
-            'com.osp',
-          ];
-          return !systemApps.some(systemApp =>
-            app.packageName.startsWith(systemApp),
-          );
-        })
-        .map(app => ({
-          ...app,
-          id: app.packageName,
-          locked: lockedSet.has(app.packageName),
-          icon: app.icon ? `data:image/png;base64,${app.icon}` : null,
-        }));
-
-      console.log(`📱 Showing ${appsWithLockStatus.length} apps`);
-      setApps(appsWithLockStatus);
-      setFilteredApps(appsWithLockStatus);
-      setLockedApps(lockedSet);
-    } catch (error) {
-      console.error('❌ Error loading apps:', error);
-      showAlert(t('alerts.error'), t('errors.operation_failed'), 'error');
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
-// In HomeScreen.js, update the toggleAppLock function:
-const toggleAppLock = async (appId, appPackageName, appName) => {
-    console.log(`🔐 Toggling lock for: ${appPackageName} (${appName})`);
-    
-    // PREVENT UNLOCKING OUR OWN APP (Security requirement)
-    if (appPackageName === OUR_APP_PACKAGE) {
-        const isCurrentlyLocked = lockedApps.has(appPackageName);
-        
-        if (isCurrentlyLocked) {
-            // Trying to unlock our own app - NOT ALLOWED
-            console.log(`⛔ Cannot unlock our own app (security requirement)`);
-            
-            showAlert(
-                t('alerts.security_warning'),
-                t('home.cannot_unlock_applock'),
-                'warning',
-            );
-            
-            // Play error animation
-            Animated.sequence([
-                Animated.timing(scaleAnim, {
-                    toValue: 0.95,
-                    duration: 100,
-                    easing: Easing.ease,
-                    useNativeDriver: true,
-                }),
-                Animated.timing(scaleAnim, {
-                    toValue: 1,
-                    duration: 100,
-                    easing: Easing.ease,
-                    useNativeDriver: true,
-                }),
-            ]).start();
-            
-            return;
-        }
-    }
-    
-    Animated.sequence([
-        Animated.timing(scaleAnim, {
-            toValue: 0.95,
-            duration: 100,
-            easing: Easing.ease,
-            useNativeDriver: true,
-        }),
-        Animated.timing(scaleAnim, {
-            toValue: 1,
-            duration: 100,
-            easing: Easing.ease,
-            useNativeDriver: true,
-        }),
-    ]).start();
-
-    const newLockedApps = new Set(lockedApps);
-    const isCurrentlyLocked = newLockedApps.has(appPackageName);
-
-    if (isCurrentlyLocked) {
-        newLockedApps.delete(appPackageName);
-        console.log(`🔓 Unlocked: ${appPackageName}`);
-    } else {
-        newLockedApps.add(appPackageName);
-        console.log(`🔒 Locked: ${appPackageName}`);
-    }
-
-    // Update main apps list
-    const updatedApps = apps.map(app =>
-        app.id === appId
-            ? {...app, locked: newLockedApps.has(app.packageName)}
-            : app,
-    );
-    setApps(updatedApps);
-    setLockedApps(newLockedApps);
-
-    // Update filtered apps
-    const updatedFilteredApps = filteredApps.map(app =>
-        app.id === appId
-            ? {...app, locked: newLockedApps.has(app.packageName)}
-            : app,
-    );
-    setFilteredApps(updatedFilteredApps);
-
-    await saveLockedApps(newLockedApps);
-
-    // Show security warning when locking our own app (this should only happen on initial setup)
-    if (appPackageName === OUR_APP_PACKAGE && !isCurrentlyLocked) {
-        showAlert(
-            t('alerts.success'),
-            t('home.security_enabled_message'),
-            'info',
-        );
-    }
-};
-
-  const lockAllApps = async () => {
-    showAlert(
-      t('alerts.lock_all_apps'),
-      t('home.lock_all_confirmation'),
-      'warning',
-      [
-        {
-          text: t('common.cancel'),
-          style: 'cancel',
-        },
-        {
-          text: t('alerts.lock_all'),
-          onPress: async () => {
-            try {
-              const allPackageNames = apps.map(app => app.packageName);
-              const newLockedApps = new Set([
-                ...lockedApps,
-                ...allPackageNames,
-              ]);
-              await saveLockedApps(newLockedApps);
-
-              const updatedApps = apps.map(app => ({
-                ...app,
-                locked: true,
-              }));
-              setApps(updatedApps);
-              setFilteredApps(updatedApps);
-
-              showAlert(
-                t('alerts.success'),
-                t('home.all_apps_locked'),
-                'success',
-              );
-            } catch (error) {
-              console.error('Error locking all apps:', error);
-              showAlert(
-                t('alerts.error'),
-                t('errors.operation_failed'),
-                'error',
-              );
-            }
-          },
-          style: 'destructive',
-        },
-      ],
-    );
-  };
-
-// In HomeScreen.js, update the unlockAllApps function:
-const unlockAllApps = async () => {
-    showAlert(
-        t('alerts.unlock_all_apps'),
-        t('home.unlock_all_confirmation'),
-        'warning',
-        [
-            {
-                text: t('common.cancel'),
-                style: 'cancel',
-            },
-            {
-                text: t('alerts.unlock_all'),
-                onPress: async () => {
-                    try {
-                        // Create a new set with ONLY our own app (keep it locked)
-                        const newLockedApps = new Set([OUR_APP_PACKAGE]);
-                        await saveLockedApps(newLockedApps);
-
-                        const updatedApps = apps.map(app => ({
-                            ...app,
-                            locked: app.packageName === OUR_APP_PACKAGE,
-                        }));
-                        setApps(updatedApps);
-                        setFilteredApps(updatedApps);
-
-                        showAlert(
-                            t('alerts.success'),
-                            t('home.all_apps_unlocked_except_our'),
-                            'success',
-                        );
-                    } catch (error) {
-                        console.error('Error unlocking all apps:', error);
-                        showAlert(
-                            t('alerts.error'),
-                            t('errors.operation_failed'),
-                            'error',
-                        );
-                    }
-                },
-                style: 'default',
-            },
-        ],
-    );
-};
-
-  const renderAppItem = ({item}) => (
-    <Animated.View style={[styles.appItem, {transform: [{scale: scaleAnim}]}]}>
+// Memoised app item component
+const AppItem = React.memo(({ item, onToggle, scaleAnim, t }) => {
+  return (
+    <Animated.View style={[styles.appItem, { transform: [{ scale: scaleAnim }] }]}>
       <View style={styles.appInfo}>
         <View style={styles.appIconContainer}>
           {item.icon ? (
-            <Image source={{uri: item.icon}} style={styles.appIcon} />
+            <Image source={{ uri: item.icon }} style={styles.appIcon} />
           ) : (
             <View style={styles.placeholderIcon}>
               <Icon name="android" size={20} color="#666" />
@@ -687,61 +71,497 @@ const unlockAllApps = async () => {
       </View>
       <Switch
         value={item.locked}
-        onValueChange={() =>
-          toggleAppLock(item.id, item.packageName, item.name)
-        }
+        onValueChange={() => onToggle(item.id, item.packageName, item.name)}
         thumbColor={item.locked ? '#1E88E5' : '#f4f3f4'}
-        trackColor={{false: '#767577', true: '#BBDEFB'}}
+        trackColor={{ false: '#767577', true: '#BBDEFB' }}
         ios_backgroundColor="#767577"
       />
     </Animated.View>
   );
+});
 
-  const lockedAppsCount = Array.from(lockedApps).length;
+const HomeScreen = () => {
+  const navigation = useNavigation();
+  const { t } = useTranslation();
+  const { showAlert } = useAlert();
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [apps, setApps] = useState([]);
+  const [lockedApps, setLockedApps] = useState(new Set());
+  const [scaleAnim] = useState(new Animated.Value(1));
+  const [autoLockNewApps, setAutoLockNewApps] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showSecurityQuestionModal, setShowSecurityQuestionModal] = useState(false);
+  const [hasCheckedSecurityQuestion, setHasCheckedSecurityQuestion] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchAnimation] = useState(new Animated.Value(0));
+  const [shouldAutoFocus, setShouldAutoFocus] = useState(false);
+
+  // Caches
+  const appsCache = useRef({ timestamp: 0, data: [] });
+  const lockedAppsCache = useRef({ timestamp: 0, data: new Set() });
+
+  // Memoised filtered apps
+  const filteredApps = useMemo(() => {
+    if (!searchQuery) return apps;
+    return apps.filter(app =>
+      app.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [apps, searchQuery]);
+
+  // Animation for search
+  useEffect(() => {
+    if (searchFocused) {
+      Animated.timing(searchAnimation, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start(() => {
+        setTimeout(() => {
+          setShouldAutoFocus(true);
+        }, 100);
+      });
+    } else {
+      setShouldAutoFocus(false);
+      Animated.timing(searchAnimation, {
+        toValue: 0,
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
+    }
+  }, [searchFocused, searchAnimation]);
+
+  // Keyboard listeners
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
+      console.log('⌨️ Keyboard shown');
+    });
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
+      console.log('⌨️ Keyboard hidden');
+      if (searchFocused && searchQuery === '') {
+        setSearchFocused(false);
+      }
+    });
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, [searchFocused, searchQuery]);
+
+  // Focus effect – heavy work deferred
+  useFocusEffect(
+    useCallback(() => {
+      console.log('🏠 HomeScreen focused - refreshing data');
+      InteractionManager.runAfterInteractions(async () => {
+        await Promise.all([
+          loadSettings(),
+          loadLockedApps(),
+          loadInstalledApps(),
+          checkSecurityQuestion(),
+          ensureAppLockIsLocked(),
+        ]);
+      });
+      return () => {
+        setSearchFocused(false);
+        setShouldAutoFocus(false);
+        Keyboard.dismiss();
+      };
+    }, [])
+  );
+
+  // Initial mount
+  useEffect(() => {
+    console.log('🏠 HomeScreen mounted');
+    loadSettings();
+    loadInstalledApps();
+    loadLockedApps();
+    ensureAppLockIsLocked();
+    Keyboard.dismiss();
+    return () => Keyboard.dismiss();
+  }, []);
+
+  // Data loading functions with caching
+  const loadSettings = useCallback(async () => {
+    try {
+      const autoLock = await AppLockModule.getAutoLockNewApps();
+      setAutoLockNewApps(autoLock);
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    }
+  }, []);
+
+ // Add `apps` to the dependency array of loadLockedApps
+const loadLockedApps = useCallback(
+  async (force = false) => {
+    const now = Date.now();
+    if (
+      !force &&
+      lockedAppsCache.current.data.size > 0 &&
+      now - lockedAppsCache.current.timestamp < 30000
+    ) {
+      const cachedSet = lockedAppsCache.current.data;
+      setLockedApps(cachedSet);
+      return;
+    }
+
+    try {
+      console.log('📦 HomeScreen: Loading locked apps');
+      const savedLockedApps = await AsyncStorage.getItem('lockedApps');
+      let lockedSet = new Set();
+
+      if (savedLockedApps) {
+        let lockedAppsArray;
+        try {
+          lockedAppsArray = JSON.parse(savedLockedApps);
+        } catch (e) {
+          console.error('❌ Error parsing locked apps:', e);
+          await AsyncStorage.removeItem('lockedApps');
+          lockedAppsArray = [];
+        }
+
+        if (Array.isArray(lockedAppsArray) && lockedAppsArray.length > 0) {
+          lockedAppsArray.forEach(item => {
+            const packageName = typeof item === 'string' ? item : item.packageName;
+            if (packageName) lockedSet.add(packageName);
+          });
+        }
+      }
+
+      // Update lockedApps state only if changed
+      if (JSON.stringify([...lockedSet].sort()) !== JSON.stringify([...lockedApps].sort())) {
+        setLockedApps(lockedSet);
+      }
+
+      // Update cache
+      lockedAppsCache.current = { timestamp: now, data: lockedSet };
+
+      // Sync with native module
+      const packageNamesArray = Array.from(lockedSet);
+      if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
+        await AppLockModule.setLockedApps(packageNamesArray);
+      }
+
+      // Now update the apps list with the new lock status – use functional update to avoid stale apps
+      setApps(prevApps => 
+        prevApps.map(app => ({
+          ...app,
+          locked: lockedSet.has(app.packageName),
+        }))
+      );
+    } catch (error) {
+      console.error('❌ HomeScreen: Error loading locked apps:', error);
+    }
+  },
+  [lockedApps] // keep only lockedApps, but inside we use functional setApps
+);
+
+const loadInstalledApps = useCallback(
+  async (force = false) => {
+    const now = Date.now();
+    if (
+      !force &&
+      appsCache.current.data.length > 0 &&
+      now - appsCache.current.timestamp < 30000
+    ) {
+      // Apply current lock status to cached apps using functional update
+      setApps(prevApps => {
+        const updated = appsCache.current.data.map(app => ({
+          ...app,
+          locked: lockedApps.has(app.packageName),
+        }));
+        return updated;
+      });
+      return;
+    }
+
+    try {
+      setIsRefreshing(true);
+      console.log('📱 Loading installed apps...');
+      const installedApps = await AppListModule.getInstalledApps();
+
+      // Use current lockedApps state (or read from storage as fallback)
+      let currentLockedSet = lockedApps;
+      if (currentLockedSet.size === 0) {
+        // fallback to storage
+        const savedLockedApps = await AsyncStorage.getItem('lockedApps');
+        if (savedLockedApps) {
+          try {
+            const lockedArray = JSON.parse(savedLockedApps);
+            lockedArray.forEach(item => {
+              const pkg = typeof item === 'string' ? item : item.packageName;
+              if (pkg) currentLockedSet.add(pkg);
+            });
+          } catch (e) {}
+        }
+      }
+
+      const appsWithLockStatus = installedApps
+        .filter(app => {
+          const systemApps = [
+            'android',
+            'com.android',
+            'com.google.android',
+            'com.sec.android',
+            'com.samsung',
+            'com.orange',
+            'com.osp',
+          ];
+          return !systemApps.some(systemApp => app.packageName.startsWith(systemApp));
+        })
+        .map(app => ({
+          ...app,
+          id: app.packageName,
+          locked: currentLockedSet.has(app.packageName),
+          icon: app.icon ? `data:image/png;base64,${app.icon}` : null,
+        }));
+
+      setApps(appsWithLockStatus);
+      // Update cache without lock status
+      appsCache.current = {
+        timestamp: now,
+        data: appsWithLockStatus.map(({ locked, ...rest }) => rest),
+      };
+    } catch (error) {
+      console.error('❌ Error loading apps:', error);
+      showAlert(t('alerts.error'), t('errors.operation_failed'), 'error');
+    } finally {
+      setIsRefreshing(false);
+    }
+  },
+  [lockedApps, showAlert, t] // added dependencies
+);
+
+  const checkSecurityQuestion = useCallback(async () => {
+    if (hasCheckedSecurityQuestion) return;
+    try {
+      const [securityQuestion, securityAnswer] = await Promise.all([
+        AsyncStorage.getItem('security_question'),
+        AsyncStorage.getItem('security_answer'),
+      ]);
+      if (!securityQuestion || !securityAnswer) {
+        console.log('⚠️ Security question not set - showing mandatory modal');
+        setTimeout(() => {
+          setShowSecurityQuestionModal(true);
+        }, 1000);
+      }
+      setHasCheckedSecurityQuestion(true);
+    } catch (error) {
+      console.error('Error checking security question:', error);
+    }
+  }, [hasCheckedSecurityQuestion]);
+
+  const ensureAppLockIsLocked = useCallback(async () => {
+    try {
+      const [securityQuestion, securityAnswer, savedLockedApps] = await Promise.all([
+        AsyncStorage.getItem('security_question'),
+        AsyncStorage.getItem('security_answer'),
+        AsyncStorage.getItem('lockedApps'),
+      ]);
+
+      if (securityQuestion && securityAnswer) {
+        let lockedSet = new Set();
+        if (savedLockedApps) {
+          try {
+            const lockedAppsArray = JSON.parse(savedLockedApps);
+            lockedAppsArray.forEach(item => {
+              const pkg = typeof item === 'string' ? item : item.packageName;
+              if (pkg) lockedSet.add(pkg);
+            });
+          } catch (e) {
+            console.error('Error parsing locked apps:', e);
+          }
+        }
+
+        if (!lockedSet.has(OUR_APP_PACKAGE)) {
+          console.log('🔒 Locking our app for security');
+          lockedSet.add(OUR_APP_PACKAGE);
+          await AsyncStorage.multiSet([
+            ['lockedApps', JSON.stringify(Array.from(lockedSet))],
+            ['just_set_security_question', 'true'],
+          ]);
+
+          setLockedApps(lockedSet);
+          if (apps.length > 0) {
+            const updatedApps = apps.map(app => ({
+              ...app,
+              locked: lockedSet.has(app.packageName),
+            }));
+            setApps(updatedApps);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error ensuring App Lock is locked:', error);
+    }
+  }, [apps]);
+
+  const saveLockedApps = useCallback(
+    async appsSet => {
+      try {
+        const filteredApps = Array.from(appsSet);
+        await AsyncStorage.setItem('lockedApps', JSON.stringify(filteredApps));
+        if (AppLockModule && typeof AppLockModule.setLockedApps === 'function') {
+          await AppLockModule.setLockedApps(filteredApps);
+        }
+
+        setLockedApps(new Set(filteredApps));
+
+        const updatedApps = apps.map(app => ({
+          ...app,
+          locked: filteredApps.includes(app.packageName),
+        }));
+        setApps(updatedApps);
+      } catch (error) {
+        console.error('❌ Error saving locked apps:', error);
+      }
+    },
+    [apps]
+  );
+
+  const toggleAppLock = useCallback(
+    async (appId, appPackageName, appName) => {
+      console.log(`🔐 Toggling lock for: ${appPackageName} (${appName})`);
+
+      if (appPackageName === OUR_APP_PACKAGE) {
+        const isCurrentlyLocked = lockedApps.has(appPackageName);
+        if (isCurrentlyLocked) {
+          console.log(`⛔ Cannot unlock our own app (security requirement)`);
+          showAlert(t('alerts.security_warning'), t('home.cannot_unlock_applock'), 'warning');
+          Animated.sequence([
+            Animated.timing(scaleAnim, { toValue: 0.95, duration: 100, useNativeDriver: true }),
+            Animated.timing(scaleAnim, { toValue: 1, duration: 100, useNativeDriver: true }),
+          ]).start();
+          return;
+        }
+      }
+
+      Animated.sequence([
+        Animated.timing(scaleAnim, { toValue: 0.95, duration: 100, useNativeDriver: true }),
+        Animated.timing(scaleAnim, { toValue: 1, duration: 100, useNativeDriver: true }),
+      ]).start();
+
+      const newLockedApps = new Set(lockedApps);
+      if (newLockedApps.has(appPackageName)) {
+        newLockedApps.delete(appPackageName);
+      } else {
+        newLockedApps.add(appPackageName);
+      }
+
+      await saveLockedApps(newLockedApps);
+    },
+    [lockedApps, saveLockedApps, scaleAnim, showAlert, t]
+  );
+
+  const lockAllApps = useCallback(() => {
+    showAlert(t('alerts.lock_all_apps'), t('home.lock_all_confirmation'), 'warning', [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('alerts.lock_all'),
+        onPress: async () => {
+          try {
+            const allPackageNames = apps.map(app => app.packageName);
+            const newLockedApps = new Set([...lockedApps, ...allPackageNames]);
+            await saveLockedApps(newLockedApps);
+            showAlert(t('alerts.success'), t('home.all_apps_locked'), 'success');
+          } catch (error) {
+            console.error('Error locking all apps:', error);
+            showAlert(t('alerts.error'), t('errors.operation_failed'), 'error');
+          }
+        },
+        style: 'destructive',
+      },
+    ]);
+  }, [apps, lockedApps, saveLockedApps, showAlert, t]);
+
+  const unlockAllApps = useCallback(() => {
+    showAlert(t('alerts.unlock_all_apps'), t('home.unlock_all_confirmation'), 'warning', [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('alerts.unlock_all'),
+        onPress: async () => {
+          try {
+            const newLockedApps = new Set([OUR_APP_PACKAGE]);
+            await saveLockedApps(newLockedApps);
+            showAlert(t('alerts.success'), t('home.all_apps_unlocked_except_our'), 'success');
+          } catch (error) {
+            console.error('Error unlocking all apps:', error);
+            showAlert(t('alerts.error'), t('errors.operation_failed'), 'error');
+          }
+        },
+        style: 'default',
+      },
+    ]);
+  }, [saveLockedApps, showAlert, t]);
+
+  const toggleAutoLockNewApps = useCallback(async () => {
+    const newValue = !autoLockNewApps;
+    try {
+      await AppLockModule.setAutoLockNewApps(newValue);
+      setAutoLockNewApps(newValue);
+      showAlert(
+        t('alerts.success'),
+        newValue ? t('home.auto_lock_enabled') : t('home.auto_lock_disabled'),
+        'success'
+      );
+    } catch (error) {
+      console.error('Error toggling auto-lock:', error);
+      showAlert(t('alerts.error'), t('errors.setting_update_failed'), 'error');
+    }
+  }, [autoLockNewApps, showAlert, t]);
+
+  const navigateToLockedApps = useCallback(() => {
+    const lockedAppsList = apps.filter(app => app.locked);
+    navigation.navigate('AppsList', {
+      title: t('home.locked_apps'),
+      apps: lockedAppsList,
+      type: 'locked',
+    });
+  }, [apps, navigation, t]);
+
+  const navigateToAllApps = useCallback(() => {
+    navigation.navigate('AppsList', {
+      title: t('home.all_apps'),
+      apps: apps,
+      type: 'all',
+    });
+  }, [apps, navigation, t]);
+
+  const renderAppItem = useCallback(
+    ({ item }) => (
+      <AppItem item={item} onToggle={toggleAppLock} scaleAnim={scaleAnim} t={t} />
+    ),
+    [toggleAppLock, scaleAnim, t]
+  );
+
+  const lockedAppsCount = lockedApps.size;
 
   // Interpolated styles for animation
-  const headerOpacity = searchAnimation.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 0],
-  });
-
-  const contentOpacity = searchAnimation.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 0],
-  });
-
+  const headerOpacity = searchAnimation.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+  const contentOpacity = searchAnimation.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
   const searchContainerHeight = searchAnimation.interpolate({
     inputRange: [0, 1],
     outputRange: [0, height - 100],
   });
+  const searchContainerOpacity = searchAnimation.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
 
-  const searchContainerOpacity = searchAnimation.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 1],
-  });
-
+  // Normal screen render
   const renderNormalScreen = () => (
     <View style={styles.container}>
-      <Animated.View style={{opacity: headerOpacity}}>
-        <Appbar.Header style={[styles.header, {height: 48}]}>
-          <Appbar.Content
-            title={t('home.title')}
-            titleStyle={styles.headerTitle}
-          />
+      <Animated.View style={{ opacity: headerOpacity }}>
+        <Appbar.Header style={[styles.header, { height: 48 }]}>
+          <Appbar.Content title={t('home.title')} titleStyle={styles.headerTitle} />
           <Appbar.Action
             icon="cog"
-            onPress={() => {
-              console.log('⚙️ Settings button pressed');
-              navigation.navigate('Settings');
-            }}
+            onPress={() => navigation.navigate('Settings')}
             color="#1E88E5"
           />
           <Appbar.Action
             icon="refresh"
             onPress={() => {
-              console.log('🔄 Refresh button pressed');
-              loadInstalledApps();
-              loadLockedApps();
+              loadInstalledApps(true);
+              loadLockedApps(true);
             }}
             color="#1E88E5"
             disabled={isRefreshing}
@@ -750,19 +570,22 @@ const unlockAllApps = async () => {
       </Animated.View>
 
       <Animated.ScrollView
-        style={[styles.content, {opacity: contentOpacity}]}
+        style={[styles.content, { opacity: contentOpacity }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
-            onRefresh={loadInstalledApps}
+            onRefresh={() => {
+              loadInstalledApps(true);
+              loadLockedApps(true);
+            }}
             colors={['#1E88E5']}
             tintColor="#1E88E5"
           />
-        }>
-        {/* Security Warning Card */}
+        }
+      >
         {!lockedApps.has(OUR_APP_PACKAGE) && (
           <Card style={styles.securityWarningCard}>
             <Card.Content>
@@ -779,13 +602,8 @@ const unlockAllApps = async () => {
           </Card>
         )}
 
-        {/* Stats Cards */}
         <View style={styles.statsContainer}>
-          <TouchableOpacity 
-            style={styles.statItemContainer}
-            onPress={navigateToLockedApps}
-            activeOpacity={0.7}
-          >
+          <TouchableOpacity style={styles.statItemContainer} onPress={navigateToLockedApps} activeOpacity={0.7}>
             <View style={styles.statItem}>
               <View style={[styles.statIcon, styles.lockedStat]}>
                 <Icon name="lock" size={20} color="#FFFFFF" />
@@ -798,11 +616,7 @@ const unlockAllApps = async () => {
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.statItemContainer}
-            onPress={navigateToAllApps}
-            activeOpacity={0.7}
-          >
+          <TouchableOpacity style={styles.statItemContainer} onPress={navigateToAllApps} activeOpacity={0.7}>
             <View style={styles.statItem}>
               <View style={[styles.statIcon, styles.totalStat]}>
                 <Icon name="apps" size={20} color="#FFFFFF" />
@@ -816,24 +630,14 @@ const unlockAllApps = async () => {
           </TouchableOpacity>
         </View>
 
-        {/* Auto-lock Settings */}
         <Card style={styles.settingsCard}>
           <Card.Content>
             <View style={styles.settingItem}>
               <View style={styles.settingInfo}>
-                <Icon
-                  name="lock-plus"
-                  size={20}
-                  color="#1E88E5"
-                  style={styles.settingIcon}
-                />
+                <Icon name="lock-plus" size={20} color="#1E88E5" style={styles.settingIcon} />
                 <View style={styles.settingText}>
-                  <Text style={styles.settingTitle}>
-                    {t('home.auto_lock_new_apps')}
-                  </Text>
-                  <Text style={styles.settingDescription}>
-                    {t('home.auto_lock_description')}
-                  </Text>
+                  <Text style={styles.settingTitle}>{t('home.auto_lock_new_apps')}</Text>
+                  <Text style={styles.settingDescription}>{t('home.auto_lock_description')}</Text>
                 </View>
               </View>
               <PaperSwitch
@@ -845,7 +649,6 @@ const unlockAllApps = async () => {
           </Card.Content>
         </Card>
 
-        {/* Quick Actions */}
         <Card style={styles.actionsCard}>
           <Card.Content>
             <Text style={styles.actionsTitle}>{t('home.quick_actions')}</Text>
@@ -856,7 +659,8 @@ const unlockAllApps = async () => {
                 style={[styles.quickActionButton, styles.lockAllButton]}
                 icon="lock"
                 labelStyle={styles.quickActionLabel}
-                compact>
+                compact
+              >
                 {t('home.lock_all')}
               </Button>
               <Button
@@ -865,14 +669,14 @@ const unlockAllApps = async () => {
                 style={[styles.quickActionButton, styles.unlockAllButton]}
                 icon="lock-open"
                 labelStyle={styles.quickActionLabel}
-                compact>
+                compact
+              >
                 {t('home.unlock_all')}
               </Button>
             </View>
           </Card.Content>
         </Card>
 
-        {/* Search Bar */}
         <Card style={styles.searchCard}>
           <Card.Content>
             <Searchbar
@@ -884,25 +688,18 @@ const unlockAllApps = async () => {
               inputStyle={styles.searchInput}
               placeholderTextColor="#888"
               elevation={0}
-              onFocus={() => {
-                console.log('🔍 Search bar focused');
-                setSearchFocused(true);
-              }}
+              onFocus={() => setSearchFocused(true)}
               autoFocus={false}
               blurOnSubmit={false}
             />
           </Card.Content>
         </Card>
 
-        {/* Apps List */}
         <Card style={styles.appsCard}>
           <Card.Content>
             <View style={styles.appsHeader}>
               <Text style={styles.appsTitle}>{t('home.installed_apps')}</Text>
-              <Text
-                style={
-                  apps.length === 0 ? styles.appsCountEmpty : styles.appsCount
-                }>
+              <Text style={apps.length === 0 ? styles.appsCountEmpty : styles.appsCount}>
                 {filteredApps.length} {t('home.apps')}
               </Text>
             </View>
@@ -934,16 +731,15 @@ const unlockAllApps = async () => {
                 <Icon name="magnify" size={64} color="#BDBDBD" />
                 <Text style={styles.emptyTitle}>{t('home.no_apps_found')}</Text>
                 <Text style={styles.emptyText}>
-                  {searchQuery
-                    ? t('home.no_search_results')
-                    : t('home.no_apps_available')}
+                  {searchQuery ? t('home.no_search_results') : t('home.no_apps_available')}
                 </Text>
                 {searchQuery && (
                   <Button
                     mode="text"
                     onPress={() => setSearchQuery('')}
                     style={styles.clearSearchButton}
-                    labelStyle={styles.clearSearchLabel}>
+                    labelStyle={styles.clearSearchLabel}
+                  >
                     {t('home.clear_search')}
                   </Button>
                 )}
@@ -956,17 +752,19 @@ const unlockAllApps = async () => {
   );
 
   const renderSearchScreen = () => (
-    <Animated.View style={[
-      styles.searchFullscreenContainer,
-      {
-        height: searchContainerHeight,
-        opacity: searchContainerOpacity,
-      }
-    ]}>
+    <Animated.View
+      style={[
+        styles.searchFullscreenContainer,
+        {
+          height: searchContainerHeight,
+          opacity: searchContainerOpacity,
+        },
+      ]}
+    >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={{flex: 1}}>
+        <View style={{ flex: 1 }}>
           <View style={styles.searchHeader}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.backButton}
               onPress={() => {
                 setSearchFocused(false);
@@ -976,7 +774,6 @@ const unlockAllApps = async () => {
             >
               <Icon name="arrow-left" size={24} color="#1E88E5" />
             </TouchableOpacity>
-            
             <View style={styles.searchBarContainer}>
               <Searchbar
                 placeholder={t('home.search_placeholder')}
@@ -1001,14 +798,11 @@ const unlockAllApps = async () => {
           {searchQuery ? (
             <View style={styles.searchResultsContainer}>
               <View style={styles.searchResultsHeader}>
-                <Text style={styles.searchResultsTitle}>
-                  {t('home.search_results')}
-                </Text>
+                <Text style={styles.searchResultsTitle}>{t('home.search_results')}</Text>
                 <Text style={styles.searchResultsCount}>
                   {filteredApps.length} {t('home.apps_found')}
                 </Text>
               </View>
-              
               {filteredApps.length > 0 ? (
                 <FlatList
                   data={filteredApps}
@@ -1026,17 +820,14 @@ const unlockAllApps = async () => {
               ) : (
                 <View style={styles.searchEmptyContainer}>
                   <Icon name="magnify-close" size={64} color="#BDBDBD" />
-                  <Text style={styles.searchEmptyTitle}>
-                    {t('home.no_search_results')}
-                  </Text>
-                  <Text style={styles.searchEmptyText}>
-                    {t('home.no_matching_apps')}
-                  </Text>
+                  <Text style={styles.searchEmptyTitle}>{t('home.no_search_results')}</Text>
+                  <Text style={styles.searchEmptyText}>{t('home.no_matching_apps')}</Text>
                   <Button
                     mode="text"
                     onPress={() => setSearchQuery('')}
                     style={styles.clearSearchButton}
-                    labelStyle={styles.clearSearchLabel}>
+                    labelStyle={styles.clearSearchLabel}
+                  >
                     {t('home.clear_search')}
                   </Button>
                 </View>
@@ -1044,21 +835,17 @@ const unlockAllApps = async () => {
             </View>
           ) : (
             <View style={styles.searchSuggestionsContainer}>
-              <Text style={styles.suggestionsTitle}>
-                {t('home.search_suggestions')}
-              </Text>
+              <Text style={styles.suggestionsTitle}>{t('home.search_suggestions')}</Text>
               <View style={styles.suggestionsGrid}>
                 {apps.slice(0, 6).map(app => (
                   <TouchableOpacity
                     key={app.id}
                     style={styles.suggestionItem}
-                    onPress={() => {
-                      setSearchQuery(app.name);
-                    }}
+                    onPress={() => setSearchQuery(app.name)}
                   >
                     <View style={styles.suggestionIconContainer}>
                       {app.icon ? (
-                        <Image source={{uri: app.icon}} style={styles.suggestionIcon} />
+                        <Image source={{ uri: app.icon }} style={styles.suggestionIcon} />
                       ) : (
                         <View style={styles.suggestionPlaceholderIcon}>
                           <Icon name="android" size={16} color="#666" />
@@ -1088,19 +875,14 @@ const unlockAllApps = async () => {
           visible={showSecurityQuestionModal}
           onDismiss={() => {}}
           contentContainerStyle={styles.modalContainer}
-          dismissable={false}>
+          dismissable={false}
+        >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Icon name="shield-alert" size={32} color="#1E88E5" />
-              <Text style={styles.modalTitle}>
-                {t('home.security_question_required')}
-              </Text>
+              <Text style={styles.modalTitle}>{t('home.security_question_required')}</Text>
             </View>
-            
-            <Text style={styles.modalDescription}>
-              {t('home.security_question_mandatory_desc')}
-            </Text>
-            
+            <Text style={styles.modalDescription}>{t('home.security_question_mandatory_desc')}</Text>
             <View style={styles.modalButtons}>
               <Button
                 mode="contained"
@@ -1109,7 +891,8 @@ const unlockAllApps = async () => {
                   navigation.navigate('SecurityQuestion', { mandatory: true });
                 }}
                 style={styles.modalButton}
-                contentStyle={styles.modalButtonContent}>
+                contentStyle={styles.modalButtonContent}
+              >
                 {t('home.set_security_question')}
               </Button>
             </View>
@@ -1120,14 +903,10 @@ const unlockAllApps = async () => {
   );
 };
 
+// Styles remain exactly as in your original file
 const styles = StyleSheet.create({
-  mainContainer: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
-  container: {
-    flex: 1,
-  },
+  mainContainer: { flex: 1, backgroundColor: '#F8F9FA' },
+  container: { flex: 1 },
   searchFullscreenContainer: {
     position: 'absolute',
     bottom: 0,
@@ -1138,7 +917,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     elevation: 10,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: -2},
+    shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1,
     shadowRadius: 10,
     overflow: 'hidden',
@@ -1153,27 +932,11 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F0F0F0',
     backgroundColor: '#FFFFFF',
   },
-  backButton: {
-    marginRight: 12,
-    padding: 4,
-  },
-  searchBarContainer: {
-    flex: 1,
-    marginTop: 10
-  },
-  searchBarFullscreen: {
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    elevation: 0,
-    height: 48,
-  },
-  searchInputFullscreen: {
-    color: '#333',
-    fontSize: 16,
-  },
-  searchResultsContainer: {
-    flex: 1,
-  },
+  backButton: { marginRight: 12, padding: 4 },
+  searchBarContainer: { flex: 1, marginTop: 10 },
+  searchBarFullscreen: { backgroundColor: '#F5F5F5', borderRadius: 12, elevation: 0, height: 48 },
+  searchInputFullscreen: { color: '#333', fontSize: 16 },
+  searchResultsContainer: { flex: 1 },
   searchResultsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1183,55 +946,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
   },
-  searchResultsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  searchResultsCount: {
-    fontSize: 14,
-    color: '#666',
-  },
-  searchResultsList: {
-    flex: 1,
-  },
-  searchResultsContent: {
-    paddingBottom: 20,
-  },
-  searchEmptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 40,
-  },
-  searchEmptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#666',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  searchEmptyText: {
-    fontSize: 14,
-    color: '#888',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  searchSuggestionsContainer: {
-    flex: 1,
-    padding: 20,
-  },
-  suggestionsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#666',
-    marginBottom: 16,
-  },
-  suggestionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
+  searchResultsTitle: { fontSize: 16, fontWeight: '600', color: '#333' },
+  searchResultsCount: { fontSize: 14, color: '#666' },
+  searchResultsList: { flex: 1 },
+  searchResultsContent: { paddingBottom: 20 },
+  searchEmptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
+  searchEmptyTitle: { fontSize: 18, fontWeight: '600', color: '#666', marginTop: 16, marginBottom: 8 },
+  searchEmptyText: { fontSize: 14, color: '#888', textAlign: 'center', lineHeight: 20 },
+  searchSuggestionsContainer: { flex: 1, padding: 20 },
+  suggestionsTitle: { fontSize: 16, fontWeight: '600', color: '#666', marginBottom: 16 },
+  suggestionsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   suggestionItem: {
     width: '31%',
     alignItems: 'center',
@@ -1249,374 +973,74 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  suggestionIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 4,
-  },
-  suggestionPlaceholderIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  suggestionName: {
-    fontSize: 12,
-    color: '#333',
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  header: {
-    backgroundColor: '#FFFFFF',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1E88E5',
-  },
-  content: {
-    flex: 1,
-  },
-  securityWarningCard: {
-    margin: 16,
-    marginBottom: 12,
-    borderRadius: 16,
-    backgroundColor: '#FFF3E0',
-    borderLeftWidth: 4,
-    borderLeftColor: '#FF9800',
-  },
-  securityWarningHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  securityWarningTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#E65100',
-    marginLeft: 8,
-  },
-  securityWarningText: {
-    fontSize: 14,
-    color: '#E65100',
-    lineHeight: 18,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginHorizontal: 16,
-    marginBottom: 16,
-    marginTop: 12,
-    gap: 12,
-  },
-  statItemContainer: {
-    flex: 1,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  statItem: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    elevation: 2,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-  },
-  statIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  lockedStat: {
-    backgroundColor: '#1E88E5',
-  },
-  totalStat: {
-    backgroundColor: '#43A047',
-  },
-  statText: {
-    flex: 1,
-  },
-  statNumber: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  statLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#333',
-  },
-  statChevron: {
-    marginLeft: 8,
-  },
-  settingsCard: {
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
-    elevation: 2,
-  },
-  settingItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  settingInfo: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  settingIcon: {
-    marginRight: 12,
-  },
-  settingText: {
-    flex: 1,
-  },
-  settingTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 2,
-  },
-  settingDescription: {
-    fontSize: 12,
-    color: '#666',
-    lineHeight: 16,
-  },
-  actionsCard: {
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
-    elevation: 2,
-  },
-  actionsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 12,
-  },
-  quickActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  quickActionButton: {
-    flex: 1,
-    borderRadius: 12,
-  },
-  lockAllButton: {
-    backgroundColor: '#1E88E5',
-  },
-  unlockAllButton: {
-    borderColor: '#1E88E5',
-  },
-  quickActionLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  searchCard: {
-    marginHorizontal: 16,
-    marginBottom: 10,
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
-    elevation: 2,
-  },
-  searchBar: {
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    elevation: 0,
-  },
-  searchInput: {
-    color: '#333',
-    fontSize: 14,
-  },
-  appsCard: {
-    marginHorizontal: 16,
-    marginBottom: 24,
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
-    elevation: 2,
-  },
-  appsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  appsTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  appsCount: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
-  },
-  appsCountEmpty: {
-    fontSize: 14,
-    color: '#BDBDBD',
-    fontWeight: '500',
-  },
-  appListContainer: {
-    height: 400,
-  },
-  appList: {
-    flex: 1,
-  },
-  appItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  appInfo: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  appIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#F5F5F5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  appIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-  },
-  placeholderIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  appDetails: {
-    flex: 1,
-  },
-  appName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 2,
-  },
-  ourAppBadge: {
-    fontSize: 12,
-    color: '#1E88E5',
-    fontStyle: 'italic',
-  },
-  lockedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E3F2FD',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
-  },
-  lockedBadgeText: {
-    fontSize: 10,
-    color: '#1E88E5',
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  separator: {
-    height: 1,
-    backgroundColor: '#F0F0F0',
-    marginVertical: 8,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    paddingHorizontal: 20,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#666',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#888',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  clearSearchButton: {
-    marginTop: 10,
-  },
-  clearSearchLabel: {
-    color: '#1E88E5',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  modalContainer: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 24,
-    margin: 20,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-  },
-  modalContent: {
-    alignItems: 'center',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    justifyContent: 'center',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1E88E5',
-    marginLeft: 12,
-  },
-  modalDescription: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 22,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    width: '100%',
-  },
-  modalButton: {
-    borderRadius: 8,
-    backgroundColor: '#1E88E5',
-    flex: 1,
-  },
-  modalButtonContent: {
-    paddingVertical: 8,
-  },
+  suggestionIcon: { width: 24, height: 24, borderRadius: 4 },
+  suggestionPlaceholderIcon: { width: 24, height: 24, borderRadius: 4, justifyContent: 'center', alignItems: 'center' },
+  suggestionName: { fontSize: 12, color: '#333', textAlign: 'center', fontWeight: '500' },
+  header: { backgroundColor: '#FFFFFF', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 },
+  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#1E88E5' },
+  content: { flex: 1 },
+  securityWarningCard: { margin: 16, marginBottom: 12, borderRadius: 16, backgroundColor: '#FFF3E0', borderLeftWidth: 4, borderLeftColor: '#FF9800' },
+  securityWarningHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  securityWarningTitle: { fontSize: 16, fontWeight: 'bold', color: '#E65100', marginLeft: 8 },
+  securityWarningText: { fontSize: 14, color: '#E65100', lineHeight: 18 },
+  statsContainer: { flexDirection: 'row', justifyContent: 'space-between', marginHorizontal: 16, marginBottom: 16, marginTop: 12, gap: 12 },
+  statItemContainer: { flex: 1, borderRadius: 16, overflow: 'hidden' },
+  statItem: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 16, elevation: 2, paddingVertical: 14, paddingHorizontal: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4 },
+  statIcon: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  lockedStat: { backgroundColor: '#1E88E5' },
+  totalStat: { backgroundColor: '#43A047' },
+  statText: { flex: 1 },
+  statNumber: { fontSize: 22, fontWeight: 'bold', color: '#333' },
+  statLabel: { fontSize: 13, fontWeight: '600', color: '#333' },
+  statChevron: { marginLeft: 8 },
+  settingsCard: { marginHorizontal: 16, marginBottom: 16, borderRadius: 16, backgroundColor: '#FFFFFF', elevation: 2 },
+  settingItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  settingInfo: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  settingIcon: { marginRight: 12 },
+  settingText: { flex: 1 },
+  settingTitle: { fontSize: 16, fontWeight: '600', color: '#333', marginBottom: 2 },
+  settingDescription: { fontSize: 12, color: '#666', lineHeight: 16 },
+  actionsCard: { marginHorizontal: 16, marginBottom: 16, borderRadius: 16, backgroundColor: '#FFFFFF', elevation: 2 },
+  actionsTitle: { fontSize: 16, fontWeight: '600', color: '#333', marginBottom: 12 },
+  quickActions: { flexDirection: 'row', gap: 12 },
+  quickActionButton: { flex: 1, borderRadius: 12 },
+  lockAllButton: { backgroundColor: '#1E88E5' },
+  unlockAllButton: { borderColor: '#1E88E5' },
+  quickActionLabel: { fontSize: 14, fontWeight: '600' },
+  searchCard: { marginHorizontal: 16, marginBottom: 10, borderRadius: 16, backgroundColor: '#FFFFFF', elevation: 2 },
+  searchBar: { backgroundColor: '#F5F5F5', borderRadius: 12, elevation: 0 },
+  searchInput: { color: '#333', fontSize: 14 },
+  appsCard: { marginHorizontal: 16, marginBottom: 24, borderRadius: 16, backgroundColor: '#FFFFFF', elevation: 2 },
+  appsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  appsTitle: { fontSize: 18, fontWeight: 'bold', color: '#333' },
+  appsCount: { fontSize: 14, color: '#666', fontWeight: '500' },
+  appsCountEmpty: { fontSize: 14, color: '#BDBDBD', fontWeight: '500' },
+  appListContainer: { height: 400 },
+  appList: { flex: 1 },
+  appItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
+  appInfo: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  appIconContainer: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#F5F5F5', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  appIcon: { width: 28, height: 28, borderRadius: 6 },
+  placeholderIcon: { width: 28, height: 28, borderRadius: 6, justifyContent: 'center', alignItems: 'center' },
+  appDetails: { flex: 1 },
+  appName: { fontSize: 16, fontWeight: '600', color: '#333', marginBottom: 2 },
+  ourAppBadge: { fontSize: 12, color: '#1E88E5', fontStyle: 'italic' },
+  lockedBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#E3F2FD', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start' },
+  lockedBadgeText: { fontSize: 10, color: '#1E88E5', fontWeight: '600', marginLeft: 4 },
+  separator: { height: 1, backgroundColor: '#F0F0F0', marginVertical: 8 },
+  emptyContainer: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 20 },
+  emptyTitle: { fontSize: 18, fontWeight: '600', color: '#666', marginTop: 16, marginBottom: 8 },
+  emptyText: { fontSize: 14, color: '#888', textAlign: 'center', lineHeight: 20 },
+  clearSearchButton: { marginTop: 10 },
+  clearSearchLabel: { color: '#1E88E5', fontSize: 14, fontWeight: '600' },
+  modalContainer: { backgroundColor: 'white', borderRadius: 16, padding: 24, margin: 20, elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 8 },
+  modalContent: { alignItems: 'center' },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, justifyContent: 'center' },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1E88E5', marginLeft: 12 },
+  modalDescription: { fontSize: 16, color: '#666', textAlign: 'center', marginBottom: 24, lineHeight: 22 },
+  modalButtons: { flexDirection: 'row', justifyContent: 'center', width: '100%' },
+  modalButton: { borderRadius: 8, backgroundColor: '#1E88E5', flex: 1 },
+  modalButtonContent: { paddingVertical: 8 },
 });
 
 export default HomeScreen;

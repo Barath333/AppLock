@@ -445,7 +445,7 @@ const SettingsScreen = () => {
       <Text style={styles.title}>{t('settings.title')}</Text>
 
       {/* Security Status Card */}
-      <Card style={styles.securityCard}>
+      {/* <Card style={styles.securityCard}>
         <Card.Content>
           <View style={styles.securityHeader}>
             <Text style={styles.securityTitle}>
@@ -491,7 +491,7 @@ const SettingsScreen = () => {
             </Text>
           )}
         </Card.Content>
-      </Card>
+      </Card> */}
 
       {/* App Settings */}
       <Card style={styles.card}>
@@ -552,7 +552,7 @@ const SettingsScreen = () => {
       </Card>
 
       {/* Security & Authentication */}
-      <Card style={styles.card}>
+      {/* <Card style={styles.card}>
         <Card.Content>
           <Text style={styles.sectionTitle}>{t('settings.security_auth')}</Text>
 
@@ -615,7 +615,7 @@ const SettingsScreen = () => {
             </Button>
           )}
         </Card.Content>
-      </Card>
+      </Card> */}
 
       {/* Language & Regional */}
       <Card style={styles.card}>

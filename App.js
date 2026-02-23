@@ -99,65 +99,64 @@ export default function App() {
     }
   };
 
-// In App.js, update the checkIfAppLockIsLocked function:
-const checkIfAppLockIsLocked = async () => {
-  try {
-    console.log('🔍 Checking if App Lock is locked...');
-    
-    // Skip if we're already in lock screen mode
-    if (isLockScreenMode) {
-      console.log('⏭️ Already in lock screen mode, skipping check');
-      return;
-    }
-    
-    // Check both conditions in parallel
-    const [lockedApps, securityQuestion, securityAnswer, justSetSecurityQuestion] = await Promise.all([
-      AsyncStorage.getItem('lockedApps'),
-      AsyncStorage.getItem('security_question'),
-      AsyncStorage.getItem('security_answer'),
-      AsyncStorage.getItem('just_set_security_question')
-    ]);
-
-    // Only lock our app if security question is set
-    if (securityQuestion && securityAnswer) {
-      console.log('✅ Security question exists');
+  const checkIfAppLockIsLocked = async () => {
+    try {
+      console.log('🔍 Checking if App Lock is locked...');
       
-      if (lockedApps) {
-        const lockedAppsArray = JSON.parse(lockedApps);
-        const isLocked = lockedAppsArray.includes('com.applock');
-        console.log('🔒 App Lock locked status:', isLocked);
-        setIsAppLocked(isLocked);
-
-        // Only show lock screen if app is locked AND we're not already showing it
-        // AND we didn't just set up security question
-        if (isLocked && !isLockScreenMode && !pendingLockedApp && justSetSecurityQuestion !== 'true') {
-          console.log('🚨 App Lock is LOCKED - showing lock screen');
-          
-          const lockedAppEvent = {
-            packageName: 'com.applock',
-            className: null,
-            timestamp: Date.now().toString(),
-          };
-
-          setIsLockScreenMode(true);
-          setPendingLockedApp(lockedAppEvent);
-          
-          // Don't hide splash screen if it's already hidden
-          if (isSplashVisible) {
-            setIsSplashVisible(false);
-          }
-        } else if (justSetSecurityQuestion === 'true') {
-          console.log('⏭️ Just set security question, cleaning up flag');
-          await AsyncStorage.removeItem('just_set_security_question');
-        }
+      // Skip if we're already in lock screen mode
+      if (isLockScreenMode) {
+        console.log('⏭️ Already in lock screen mode, skipping check');
+        return;
       }
-    } else {
-      console.log('🔓 Security question not set, keeping App Lock unlocked');
+      
+      // Check both conditions in parallel
+      const [lockedApps, securityQuestion, securityAnswer, justSetSecurityQuestion] = await Promise.all([
+        AsyncStorage.getItem('lockedApps'),
+        AsyncStorage.getItem('security_question'),
+        AsyncStorage.getItem('security_answer'),
+        AsyncStorage.getItem('just_set_security_question')
+      ]);
+
+      // Only lock our app if security question is set
+      if (securityQuestion && securityAnswer) {
+        console.log('✅ Security question exists');
+        
+        if (lockedApps) {
+          const lockedAppsArray = JSON.parse(lockedApps);
+          const isLocked = lockedAppsArray.includes('com.applock');
+          console.log('🔒 App Lock locked status:', isLocked);
+          setIsAppLocked(isLocked);
+
+          // Only show lock screen if app is locked AND we're not already showing it
+          // AND we didn't just set up security question
+          if (isLocked && !isLockScreenMode && !pendingLockedApp && justSetSecurityQuestion !== 'true') {
+            console.log('🚨 App Lock is LOCKED - showing lock screen');
+            
+            const lockedAppEvent = {
+              packageName: 'com.applock',
+              className: null,
+              timestamp: Date.now().toString(),
+            };
+
+            setIsLockScreenMode(true);
+            setPendingLockedApp(lockedAppEvent);
+            
+            // Don't hide splash screen if it's already hidden
+            if (isSplashVisible) {
+              setIsSplashVisible(false);
+            }
+          } else if (justSetSecurityQuestion === 'true') {
+            console.log('⏭️ Just set security question, cleaning up flag');
+            await AsyncStorage.removeItem('just_set_security_question');
+          }
+        }
+      } else {
+        console.log('🔓 Security question not set, keeping App Lock unlocked');
+      }
+    } catch (error) {
+      console.error('❌ Error checking if App Lock is locked:', error);
     }
-  } catch (error) {
-    console.error('❌ Error checking if App Lock is locked:', error);
-  }
-};
+  };
 
   const handleResetToSetup = async () => {
     console.log('🔄 Resetting app to setup state...');
@@ -193,27 +192,38 @@ const checkIfAppLockIsLocked = async () => {
     }
   };
 
-// In App.js, update handleForgotPin to ensure navigation
+  // ✅ FIXED: Navigate immediately after exiting lock screen mode
 const handleForgotPin = useCallback(() => {
   console.log('🔄 Handling forgot PIN from lock screen');
-  console.log('🔒 isLockScreenMode:', isLockScreenMode);
-  
-  // If we're in lock screen mode, exit it first
   if (isLockScreenMode) {
     console.log('🔓 Exiting lock screen mode');
     setIsLockScreenMode(false);
     setPendingLockedApp(null);
+
+    // Defer navigation to allow normal mode to render
+    setTimeout(() => {
+      if (navigationRef.current) {
+        navigationRef.current.navigate('ForgotPinReset', {
+          onResetComplete: () => {
+            // After successful PIN reset, re‑enter lock screen
+            setIsLockScreenMode(true);
+            setPendingLockedApp({
+              packageName: 'com.applock',
+              timestamp: Date.now().toString(),
+            });
+          },
+          onCancel: () => {
+            // User cancelled (back button) – return to lock screen
+            setIsLockScreenMode(true);
+            setPendingLockedApp({
+              packageName: 'com.applock',
+              timestamp: Date.now().toString(),
+            });
+          },
+        });
+      }
+    }, 0);
   }
-  
-  // Then navigate to reset screen
-  setTimeout(() => {
-    if (navigationRef.current) {
-      console.log('🚀 Navigating to ForgotPinReset');
-      navigationRef.current.navigate('ForgotPinReset');
-    } else {
-      console.log('❌ navigationRef.current is null');
-    }
-  }, 500);
 }, [isLockScreenMode]);
 
   const handleSetupComplete = () => {
@@ -254,55 +264,53 @@ const handleForgotPin = useCallback(() => {
     }
   };
 
- // In App.js, update the checkLockScreenMode function
-const checkLockScreenMode = async () => {
-  try {
-    console.log('🔍 Checking if app started in lock screen mode...');
+  const checkLockScreenMode = async () => {
+    try {
+      console.log('🔍 Checking if app started in lock screen mode...');
 
-    // First check for pending locked app from accessibility service
-    if (
-      AppLockModule &&
-      typeof AppLockModule.getPendingLockedApp === 'function'
-    ) {
-      const pendingApp = await AppLockModule.getPendingLockedApp();
-      console.log('📦 Pending locked app from service:', pendingApp);
+      // First check for pending locked app from accessibility service
+      if (
+        AppLockModule &&
+        typeof AppLockModule.getPendingLockedApp === 'function'
+      ) {
+        const pendingApp = await AppLockModule.getPendingLockedApp();
+        console.log('📦 Pending locked app from service:', pendingApp);
 
-      if (pendingApp && pendingApp.packageName) {
-        console.log(
-          '🚨 App started in lock screen mode for:',
-          pendingApp.packageName,
-        );
-        setIsLockScreenMode(true);
-        setPendingLockedApp(pendingApp);
-        setIsSplashVisible(false);
+        if (pendingApp && pendingApp.packageName) {
+          console.log(
+            '🚨 App started in lock screen mode for:',
+            pendingApp.packageName,
+          );
+          setIsLockScreenMode(true);
+          setPendingLockedApp(pendingApp);
+          setIsSplashVisible(false);
+          return;
+        }
+      }
+
+      // CRITICAL FIX: If no pending app but App Lock is locked, force lock screen
+      await checkIfAppLockIsLocked();
+
+      // If we're already in lock screen mode from the check above, return
+      if (isLockScreenMode && pendingLockedApp) {
         return;
       }
-    }
 
-    // CRITICAL FIX: If no pending app but App Lock is locked, force lock screen
-    await checkIfAppLockIsLocked();
-
-    // If we're already in lock screen mode from the check above, return
-    if (isLockScreenMode && pendingLockedApp) {
-      return;
-    }
-
-    console.log('📭 App started in normal mode');
-    
-    // Always show splash screen for 2 seconds on app start
-    // Remove the AsyncStorage check that prevents showing splash
-    const timer = setTimeout(() => {
-      console.log('⏰ Hiding splash screen');
+      console.log('📭 App started in normal mode');
+      
+      // Always show splash screen for 2 seconds on app start
+      const timer = setTimeout(() => {
+        console.log('⏰ Hiding splash screen');
+        setIsSplashVisible(false);
+      }, 2000);
+      
+      return () => clearTimeout(timer);
+    } catch (error) {
+      console.error('❌ Error checking lock screen mode:', error);
+      // Don't show splash on error
       setIsSplashVisible(false);
-    }, 2000);
-    
-    return () => clearTimeout(timer);
-  } catch (error) {
-    console.error('❌ Error checking lock screen mode:', error);
-    // Don't show splash on error
-    setIsSplashVisible(false);
-  }
-};
+    }
+  };
 
   const handleSplashComplete = () => {
     console.log('✅ Splash screen animation completed');
