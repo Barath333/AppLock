@@ -1,4 +1,4 @@
-// SecurityQuestionScreen.js - Fixed with toast message
+// SecurityQuestionScreen.js - Fixed back handler to only show exit dialog in edit mode
 import React, {useState, useEffect, useRef} from 'react';
 import {
   View,
@@ -11,7 +11,6 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
   UIManager,
-  findNodeHandle,
   ToastAndroid,
 } from 'react-native';
 import {
@@ -28,7 +27,6 @@ import {useTranslation} from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useAlert} from '../contexts/AlertContext';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-
 
 // Enable layout animations for Android
 if (Platform.OS === 'android') {
@@ -59,6 +57,7 @@ const SecurityQuestionScreen = () => {
   const isMandatory = route.params?.mandatory || false;
   const backHandlerRef = useRef(null);
   const scrollViewRef = useRef(null);
+  const modeRef = useRef(mode); // 🟢 Keep latest mode for back handler
 
   const securityQuestions = [
     t('security_question.pet_name'),
@@ -73,13 +72,23 @@ const SecurityQuestionScreen = () => {
   useEffect(() => {
     loadExistingQuestion();
     
-    // Handle back button for mandatory mode
+    // 🟢 Update ref when mode changes
+    modeRef.current = mode;
+  }, [mode]);
+
+  useEffect(() => {
+    // Handle back button – only show exit dialog if in edit mode and mandatory
     if (isMandatory) {
       backHandlerRef.current = BackHandler.addEventListener(
         'hardwareBackPress',
         () => {
-          setShowExitDialog(true);
-          return true;
+          // Only block back if we are currently editing
+          if (modeRef.current === 'edit') {
+            setShowExitDialog(true);
+            return true; // prevent default back
+          }
+          // Otherwise allow normal back
+          return false;
         }
       );
     }
@@ -106,7 +115,7 @@ const SecurityQuestionScreen = () => {
       keyboardDidShowListener.remove();
       keyboardDidHideListener.remove();
     };
-  }, [isMandatory]);
+  }, [isMandatory]); // 🟢 Dependency on isMandatory only – mode is handled via ref
 
   const loadExistingQuestion = async () => {
     try {
@@ -119,7 +128,7 @@ const SecurityQuestionScreen = () => {
           answer: savedAnswer,
         });
         
-        // If we're in mandatory mode and question exists, go to view mode
+        // If in mandatory mode and question exists, stay in view mode
         if (isMandatory) {
           setMode('view');
         } else {
@@ -167,76 +176,77 @@ const SecurityQuestionScreen = () => {
     }
   };
 
-const handleSave = async () => {
-  if (!selectedQuestion) {
-    showAlert(t('alerts.error'), t('errors.select_question'), 'error');
-    return;
-  }
-
-  let questionToSave = selectedQuestion;
-  if (selectedQuestion === t('security_question.custom_question')) {
-    if (!customQuestion.trim()) {
-      showAlert(
-        t('alerts.error'),
-        t('errors.enter_custom_question'),
-        'error',
-      );
+  const handleSave = async () => {
+    if (!selectedQuestion) {
+      showAlert(t('alerts.error'), t('errors.select_question'), 'error');
       return;
     }
-    questionToSave = customQuestion.trim();
-  }
 
-  if (!answer.trim()) {
-    showAlert(t('alerts.error'), t('errors.enter_answer'), 'error');
-    return;
-  }
-
-  setIsLoading(true);
-
-  try {
-    // Save security question
-    await AsyncStorage.setItem('security_question', questionToSave);
-    await AsyncStorage.setItem(
-      'security_answer',
-      answer.trim().toLowerCase(),
-    );
-
-    // Show immediate toast message
-    const successMessage = existingQuestion 
-      ? t('security_question.update_success') 
-      : t('security_question.save_success');
-    
-    if (Platform.OS === 'android') {
-      ToastAndroid.show(successMessage, ToastAndroid.SHORT);
-    } else {
-      setToastMessage(successMessage);
-      setShowToast(true);
-    }
-
-    // For first time setup, set flag for immediate locking
-    if (!existingQuestion) {
-      await AsyncStorage.setItem('just_set_security_question', 'true');
-    }
-
-    // Navigate immediately without delay
-    if (isMandatory) {
-      navigation.goBack();
-    } else {
-      await loadExistingQuestion();
-      setAnswer('');
-      if (!existingQuestion) {
-        setSelectedQuestion('');
-        setCustomQuestion('');
+    let questionToSave = selectedQuestion;
+    if (selectedQuestion === t('security_question.custom_question')) {
+      if (!customQuestion.trim()) {
+        showAlert(
+          t('alerts.error'),
+          t('errors.enter_custom_question'),
+          'error',
+        );
+        return;
       }
+      questionToSave = customQuestion.trim();
     }
-    
-  } catch (error) {
-    console.error('Error saving security question:', error);
-    showAlert(t('alerts.error'), t('errors.save_failed'), 'error');
-  } finally {
-    setIsLoading(false);
-  }
-};
+
+    if (!answer.trim()) {
+      showAlert(t('alerts.error'), t('errors.enter_answer'), 'error');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      // Save security question
+      await AsyncStorage.setItem('security_question', questionToSave);
+      await AsyncStorage.setItem(
+        'security_answer',
+        answer.trim().toLowerCase(),
+      );
+
+      // Show immediate toast message
+      const successMessage = existingQuestion 
+        ? t('security_question.update_success') 
+        : t('security_question.save_success');
+      
+      if (Platform.OS === 'android') {
+        ToastAndroid.show(successMessage, ToastAndroid.SHORT);
+      } else {
+        setToastMessage(successMessage);
+        setShowToast(true);
+      }
+
+      // For first time setup, set flag for immediate locking
+      if (!existingQuestion) {
+        await AsyncStorage.setItem('just_set_security_question', 'true');
+      }
+
+      // Navigate immediately without delay
+      if (isMandatory) {
+        navigation.goBack();
+      } else {
+        await loadExistingQuestion();
+        setAnswer('');
+        if (!existingQuestion) {
+          setSelectedQuestion('');
+          setCustomQuestion('');
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error saving security question:', error);
+      showAlert(t('alerts.error'), t('errors.save_failed'), 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const dismissKeyboard = () => {
     Keyboard.dismiss();
   };
@@ -392,7 +402,7 @@ const handleSave = async () => {
             style={styles.scrollView}
             contentContainerStyle={[
               styles.scrollContent,
-              { paddingBottom: keyboardHeight + 20 } // Add extra padding when keyboard is open
+              { paddingBottom: keyboardHeight + 20 }
             ]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
@@ -441,8 +451,8 @@ const handleSave = async () => {
         </Snackbar>
       )}
 
-      {/* Exit Dialog for mandatory mode */}
-      <Portal>
+      {/* Exit Dialog for mandatory mode when editing */}
+      {/* <Portal>
         <Dialog
           visible={showExitDialog}
           onDismiss={() => setShowExitDialog(false)}>
@@ -464,7 +474,7 @@ const handleSave = async () => {
             </Button>
           </Dialog.Actions>
         </Dialog>
-      </Portal>
+      </Portal> */}
     </KeyboardAvoidingView>
   );
 };

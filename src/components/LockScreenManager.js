@@ -1,4 +1,3 @@
-// LockScreenManager.js
 import React, {useState, useEffect, useRef} from 'react';
 import {
   View,
@@ -8,6 +7,7 @@ import {
   DeviceEventEmitter,
   LogBox,
   NativeEventEmitter,
+  InteractionManager,
 } from 'react-native';
 import LockScreen from './LockScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -48,22 +48,26 @@ const LockScreenManager = ({
   const lastEventTime = useRef(0);
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
 
+  // NEW: Cooldown map to ignore lock events immediately after unlock (per package)
+  const unlockCooldown = useRef(new Map()); // packageName -> expiry timestamp
+  // NEW: Package cooldown for JS side to prevent duplicate events
+  const packageCooldown = useRef(new Map()); // packageName -> expiry
 
   const checkBiometricsStatus = async () => {
-  try {
-    const enabled = await AsyncStorage.getItem('biometrics_enabled');
-    setBiometricsEnabled(enabled === 'true');
-    console.log('🔐 Biometrics enabled status:', enabled === 'true');
-  } catch (error) {
-    console.error('Error checking biometrics status:', error);
-    setBiometricsEnabled(false);
-  }
-};
+    try {
+      const enabled = await AsyncStorage.getItem('biometrics_enabled');
+      setBiometricsEnabled(enabled === 'true');
+      console.log('🔐 Biometrics enabled status:', enabled === 'true');
+    } catch (error) {
+      console.error('Error checking biometrics status:', error);
+      setBiometricsEnabled(false);
+    }
+  };
 
   useEffect(() => {
     console.log('🔧 LockScreenManager mounted - isAppLockMode:', isAppLockMode);
     initializeLockScreenManager();
-      checkBiometricsStatus();
+    checkBiometricsStatus();
 
     const appStateSubscription = AppState.addEventListener(
       'change',
@@ -79,7 +83,7 @@ const LockScreenManager = ({
       appStateSubscription.remove();
       backHandler.remove();
       if (unlockTimeoutRef.current) clearTimeout(unlockTimeoutRef.current);
-      
+
       // Clear any session unlocks when component unmounts
       if (AppLockModule && typeof AppLockModule.clearSessionUnlocks === 'function') {
         AppLockModule.clearSessionUnlocks();
@@ -95,7 +99,6 @@ const LockScreenManager = ({
       forceLockScreen,
     );
 
-    // Set up event listeners
     const lockedSubscription = eventEmitter.addListener(
       'onAppLocked',
       handleLockedEvent,
@@ -106,15 +109,15 @@ const LockScreenManager = ({
       handleLockedEvent,
     );
 
-    // Handle initial locked app if provided
     if (forceLockScreen && initialLockedApp) {
       console.log(
-        '🚨 Handling initial locked app:',
+        '🚨 Handling initial locked app (deferred):',
         initialLockedApp.packageName,
       );
-      processLockEvent(initialLockedApp);
+      InteractionManager.runAfterInteractions(() => {
+        processLockEvent(initialLockedApp);
+      });
     } else {
-      // Check for any pending locked apps only if not in AppLock mode
       if (!isAppLockMode) {
         checkPendingLockedApp();
       }
@@ -123,45 +126,34 @@ const LockScreenManager = ({
     checkAccessibilityService();
     hasInitialized.current = true;
 
-    // Cleanup on unmount
     return () => {
       lockedSubscription.remove();
       deviceEventSubscription.remove();
     };
   };
 
-// In LockScreenManager.js, update the handleAppStateChange function:
-const handleAppStateChange = nextAppState => {
-  console.log(
-    '📱 App State Changed:',
-    appStateRef.current,
-    '->',
-    nextAppState,
-  );
+  const handleAppStateChange = nextAppState => {
+    console.log('📱 App State Changed:', appStateRef.current, '->', nextAppState);
 
-  if (nextAppState === 'background') {
-    console.log('📱 App went to background');
-    setIsUnlocking(false);
-    lastProcessedPackage.current = null;
-    if (unlockTimeoutRef.current) clearTimeout(unlockTimeoutRef.current);
-  } else if (nextAppState === 'active') {
-    console.log('📱 App became active');
-    checkAccessibilityService();
-    
-    // CRITICAL: Refresh biometrics status when app becomes active
-    checkBiometricsStatus();
-
-    // Process any queued events
-    processNextQueuedEvent();
-
-    // Check for pending locked apps if not showing lock screen and not in AppLock mode
-    if (!showLockScreen && !isAppLockMode) {
-      checkPendingLockedApp();
+    if (nextAppState === 'background') {
+      console.log('📱 App went to background');
+      setIsUnlocking(false);
+      lastProcessedPackage.current = null;
+      if (unlockTimeoutRef.current) clearTimeout(unlockTimeoutRef.current);
+      unlockCooldown.current.clear(); // Clear cooldowns
+      packageCooldown.current.clear(); // Clear JS package cooldowns
+    } else if (nextAppState === 'active') {
+      console.log('📱 App became active');
+      checkAccessibilityService();
+      checkBiometricsStatus();
+      processNextQueuedEvent();
+      if (!showLockScreen && !isAppLockMode) {
+        checkPendingLockedApp();
+      }
     }
-  }
 
-  appStateRef.current = nextAppState;
-};
+    appStateRef.current = nextAppState;
+  };
 
   const handleBackPress = () => {
     if (showLockScreen) {
@@ -191,57 +183,57 @@ const handleAppStateChange = nextAppState => {
     }
   };
 
-// In LockScreenManager.js, update the handleLockedEvent function:
-const handleLockedEvent = event => {
-  console.log('🎯 Lock Event Received:', event.packageName);
+  const handleLockedEvent = event => {
+    console.log('🎯 Lock Event Received:', event.packageName);
 
-  // CRITICAL: Rate limiting to prevent event floods
-  const currentTime = Date.now();
-  if (currentTime - lastEventTime.current < 500) {
-    console.log('⏭️ Event rate limited, skipping');
-    return;
-  }
-  lastEventTime.current = currentTime;
-
-  // Skip duplicate events
-  if (event.packageName === lastProcessedPackage.current) {
-    console.log('⏭️ Skipping duplicate event for:', event.packageName);
-    return;
-  }
-
-  // SPECIAL CASE: Handle our own app differently
-  if (event.packageName === OUR_APP_PACKAGE) {
-    console.log('🏠 Lock event for our own app');
-    
-    // If we're already in lock screen mode, ignore
-    if (isAppLockMode && showLockScreen) {
-      console.log('⏭️ Already in lock screen mode for our app, ignoring');
+    const currentTime = Date.now();
+    if (currentTime - lastEventTime.current < 500) {
+      console.log('⏭️ Event rate limited, skipping');
       return;
     }
-    
-    // Immediately check security and process event
-    const checkSecurityAndProcess = async () => {
-      try {
-        const securityQuestion = await AsyncStorage.getItem('security_question');
-        if (!securityQuestion) {
-          console.log('⏭️ No security question, ignoring lock event');
-          return;
-        }
-        // Process the event
-        processLockEvent(event);
-      } catch (error) {
-        console.error('Error checking security:', error);
-        processLockEvent(event);
-      }
-    };
-    
-    checkSecurityAndProcess();
-    return;
-  }
+    lastEventTime.current = currentTime;
 
-  // Process the event for other apps
-  processLockEvent(event);
-};
+    // NEW: JS per-package cooldown
+    const cooldownExpiry = packageCooldown.current.get(event.packageName);
+    if (cooldownExpiry && currentTime < cooldownExpiry) {
+      console.log(`⏭️ Ignoring event for ${event.packageName} (JS cooldown active)`);
+      return;
+    }
+    // Set cooldown for this package (2 seconds)
+    packageCooldown.current.set(event.packageName, currentTime + 2000);
+
+    if (event.packageName === lastProcessedPackage.current) {
+      console.log('⏭️ Skipping duplicate event for:', event.packageName);
+      return;
+    }
+
+    if (event.packageName === OUR_APP_PACKAGE) {
+      console.log('🏠 Lock event for our own app');
+      if (isAppLockMode && showLockScreen) {
+        console.log('⏭️ Already in lock screen mode for our app, ignoring');
+        return;
+      }
+
+      const checkSecurityAndProcess = async () => {
+        try {
+          const securityQuestion = await AsyncStorage.getItem('security_question');
+          if (!securityQuestion) {
+            console.log('⏭️ No security question, ignoring lock event');
+            return;
+          }
+          processLockEvent(event);
+        } catch (error) {
+          console.error('Error checking security:', error);
+          processLockEvent(event);
+        }
+      };
+
+      checkSecurityAndProcess();
+      return;
+    }
+
+    processLockEvent(event);
+  };
 
   const processNextQueuedEvent = () => {
     if (isProcessingEvent.current || eventQueue.current.length === 0) {
@@ -255,7 +247,7 @@ const handleLockedEvent = event => {
   const processLockEvent = event => {
     if (isProcessingEvent.current) {
       console.log('⏳ Already processing event, queuing...');
-      eventQueue.current.unshift(event); // Put back at front of queue
+      eventQueue.current.unshift(event);
       return;
     }
 
@@ -268,7 +260,15 @@ const handleLockedEvent = event => {
       return;
     }
 
-    // Skip if this is the same app we just processed
+    // Cooldown check (unlock cooldown)
+    const cooldownExpiry = unlockCooldown.current.get(packageName);
+    if (cooldownExpiry && Date.now() < cooldownExpiry) {
+      console.log(`⏭️ Ignoring lock event for ${packageName} (cooldown active)`);
+      isProcessingEvent.current = false;
+      processNextQueuedEvent();
+      return;
+    }
+
     if (packageName === lastProcessedPackage.current) {
       console.log('⏭️ Skipping duplicate event for:', packageName);
       isProcessingEvent.current = false;
@@ -291,15 +291,21 @@ const handleLockedEvent = event => {
     setCurrentApp(appInfo);
     setShowLockScreen(true);
 
-    // Bring app to front and mark event as processed
-    setTimeout(() => {
-      console.log('🚀 Bringing app to front');
-      AppLockModule.bringToFront();
-      isProcessingEvent.current = false;
-
-      // Process next event in queue
-      processNextQueuedEvent();
-    }, 50);
+    // Skip bringToFront for our own app
+    if (packageName !== OUR_APP_PACKAGE) {
+      setTimeout(() => {
+        console.log('🚀 Bringing app to front');
+        AppLockModule.bringToFront();
+        isProcessingEvent.current = false;
+        processNextQueuedEvent();
+      }, 50);
+    } else {
+      // For our own app, just mark processing as done after a short delay
+      setTimeout(() => {
+        isProcessingEvent.current = false;
+        processNextQueuedEvent();
+      }, 50);
+    }
   };
 
   const getAppName = packageName => {
@@ -340,41 +346,43 @@ const handleLockedEvent = event => {
       if (currentApp?.packageName) {
         console.log('🚀 Handling unlock for:', currentApp.packageName);
 
-        // CRITICAL FIX: Unlock app for current session (will persist until user switches away)
-        // This happens in the native module when launching the app
-        
-        // Reset last processed package
+        // Set cooldown
+        unlockCooldown.current.set(currentApp.packageName, Date.now() + 2000);
+
+        // Remove queued events for this package
+        eventQueue.current = eventQueue.current.filter(
+          e => e.packageName !== currentApp.packageName
+        );
+
         lastProcessedPackage.current = null;
 
-        // SPECIAL HANDLING FOR OUR OWN APP
         if (currentApp.packageName === OUR_APP_PACKAGE) {
           console.log('🏠 Unlocking our own app - just closing lock screen');
-
-          // CRITICAL FIX: Call onUnlock callback if provided (for App.js state management)
           if (onUnlock) {
-            console.log(
-              '🔄 Calling onUnlock callback to switch to normal mode',
-            );
+            console.log('🔄 Calling onUnlock callback to switch to normal mode');
             onUnlock();
           }
-
           closeLockScreen();
-
-          // For our own app, we don't need to launch anything
-          // The app will continue normally from where it was
         } else {
           console.log('🚀 Launching original app:', currentApp.packageName);
           if (AppLockModule && typeof AppLockModule.launchApp === 'function') {
-            unlockTimeoutRef.current = setTimeout(async () => {
-              try {
-                await AppLockModule.launchApp(currentApp.packageName);
-                console.log('✅ App launch completed');
-                closeLockScreen();
-              } catch (error) {
-                console.error('❌ Error launching app:', error);
-                closeLockScreen();
-              }
-            }, 300);
+            try {
+              // Attempt to launch the app
+              await AppLockModule.launchApp(currentApp.packageName);
+              console.log('✅ App launch completed');
+              
+              // Give the system a moment to bring the target app to front
+              await new Promise(resolve => setTimeout(resolve, 400));
+              
+              // Now close the lock screen
+              closeLockScreen();
+            } catch (error) {
+              console.error('❌ Error launching app:', error);
+              // If launch fails, keep lock screen visible and show error
+              setShowLockScreen(true); // Ensure it stays visible
+              setIsUnlocking(false);
+              // You might want to set an error state in LockScreen, but we'll just log for now
+            }
           } else {
             console.log('❌ launchApp not available');
             closeLockScreen();
@@ -387,6 +395,8 @@ const handleLockedEvent = event => {
     } catch (error) {
       console.error('❌ Error during unlock:', error);
       closeLockScreen();
+    } finally {
+      setIsUnlocking(false);
     }
   };
 
@@ -396,8 +406,8 @@ const handleLockedEvent = event => {
     setCurrentApp(null);
     setIsUnlocking(false);
     lastProcessedPackage.current = null;
-
-    // Clear pending state
+    unlockCooldown.current.clear(); // Clear all cooldowns
+    packageCooldown.current.clear(); // Clear JS package cooldowns
     clearPendingLockState();
   };
 
@@ -413,21 +423,14 @@ const handleLockedEvent = event => {
     }
   };
 
-  // UPDATED: Simplified handleForgotPin - always use the callback
   const handleForgotPin = async () => {
     console.log('🔓 Forgot PIN clicked');
-    
     try {
       const securityQuestion = await AsyncStorage.getItem('security_question');
       console.log('🔍 Security question exists:', !!securityQuestion);
-      
-      // Close lock screen first
       closeLockScreen();
-      
-      // Always call parent's handler
       if (onForgotPin) {
         console.log('🔄 Calling onForgotPin callback');
-        // Small delay to ensure lock screen is fully closed
         setTimeout(() => {
           onForgotPin();
         }, 300);
@@ -438,7 +441,6 @@ const handleLockedEvent = event => {
     }
   };
 
-  // If we're in AppLock mode and showing lock screen, don't render children
   if (isAppLockMode && showLockScreen) {
     console.log('🔒 Rendering only lock screen in AppLock mode');
     return (
@@ -449,20 +451,17 @@ const handleLockedEvent = event => {
           onUnlock={handleUnlock}
           onClose={closeLockScreen}
           onForgotPin={handleForgotPin}
+          biometricsEnabled={biometricsEnabled}
         />
       </View>
     );
   }
 
-  // Normal mode - render children with lock screen overlay
   return (
     <View style={{flex: 1}}>
-      {/* Main app content - completely hidden when lock screen is visible */}
       <View style={{flex: 1, display: showLockScreen ? 'none' : 'flex'}}>
         {children}
       </View>
-
-      {/* Lock Screen - always on top when visible */}
       <LockScreen
         visible={showLockScreen}
         appInfo={currentApp}

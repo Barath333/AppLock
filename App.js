@@ -129,7 +129,9 @@ export default function App() {
 
           // Only show lock screen if app is locked AND we're not already showing it
           // AND we didn't just set up security question
-          if (isLocked && !isLockScreenMode && !pendingLockedApp && justSetSecurityQuestion !== 'true') {
+          if (isLocked && !isLockScreenMode && !pendingLockedApp) {
+            // If the just_set_security_question flag is set, we should still show the lock screen
+            // but then clear the flag after it's shown.
             console.log('🚨 App Lock is LOCKED - showing lock screen');
             
             const lockedAppEvent = {
@@ -145,8 +147,11 @@ export default function App() {
             if (isSplashVisible) {
               setIsSplashVisible(false);
             }
-          } else if (justSetSecurityQuestion === 'true') {
-            console.log('⏭️ Just set security question, cleaning up flag');
+          }
+
+          // Always clear the just_set_security_question flag after we've processed it
+          if (justSetSecurityQuestion === 'true') {
+            console.log('🧹 Clearing just_set_security_question flag');
             await AsyncStorage.removeItem('just_set_security_question');
           }
         }
@@ -192,39 +197,38 @@ export default function App() {
     }
   };
 
-  // ✅ FIXED: Navigate immediately after exiting lock screen mode
-const handleForgotPin = useCallback(() => {
-  console.log('🔄 Handling forgot PIN from lock screen');
-  if (isLockScreenMode) {
-    console.log('🔓 Exiting lock screen mode');
-    setIsLockScreenMode(false);
-    setPendingLockedApp(null);
+  const handleForgotPin = useCallback(() => {
+    console.log('🔄 Handling forgot PIN from lock screen');
+    if (isLockScreenMode) {
+      console.log('🔓 Exiting lock screen mode');
+      setIsLockScreenMode(false);
+      setPendingLockedApp(null);
 
-    // Defer navigation to allow normal mode to render
-    setTimeout(() => {
-      if (navigationRef.current) {
-        navigationRef.current.navigate('ForgotPinReset', {
-          onResetComplete: () => {
-            // After successful PIN reset, re‑enter lock screen
-            setIsLockScreenMode(true);
-            setPendingLockedApp({
-              packageName: 'com.applock',
-              timestamp: Date.now().toString(),
-            });
-          },
-          onCancel: () => {
-            // User cancelled (back button) – return to lock screen
-            setIsLockScreenMode(true);
-            setPendingLockedApp({
-              packageName: 'com.applock',
-              timestamp: Date.now().toString(),
-            });
-          },
-        });
-      }
-    }, 0);
-  }
-}, [isLockScreenMode]);
+      // Defer navigation to allow normal mode to render
+      setTimeout(() => {
+        if (navigationRef.current) {
+          navigationRef.current.navigate('ForgotPinReset', {
+            onResetComplete: () => {
+              // After successful PIN reset, re‑enter lock screen
+              setIsLockScreenMode(true);
+              setPendingLockedApp({
+                packageName: 'com.applock',
+                timestamp: Date.now().toString(),
+              });
+            },
+            onCancel: () => {
+              // User cancelled (back button) – return to lock screen
+              setIsLockScreenMode(true);
+              setPendingLockedApp({
+                packageName: 'com.applock',
+                timestamp: Date.now().toString(),
+              });
+            },
+          });
+        }
+      }, 0);
+    }
+  }, [isLockScreenMode]);
 
   const handleSetupComplete = () => {
     console.log('✅ Setup completed');
@@ -317,19 +321,10 @@ const handleForgotPin = useCallback(() => {
     setIsSplashVisible(false);
   };
 
-  // CRITICAL FIX: Handle unlock of our own app
   const handleAppUnlock = () => {
     console.log('✅ App unlocked - switching to normal mode');
     setIsLockScreenMode(false);
     setPendingLockedApp(null);
-
-    // Force clear any temporary unlocks for our app
-    if (
-      AppLockModule &&
-      typeof AppLockModule.clearTemporaryUnlocks === 'function'
-    ) {
-      AppLockModule.clearTemporaryUnlocks();
-    }
   };
 
   // Show loading state while checking setup status

@@ -1,4 +1,3 @@
-// LockScreen.js - Optimized for faster unlock
 import React, {useState, useRef, useEffect} from 'react';
 import {
   View,
@@ -15,6 +14,7 @@ import {
   Platform,
   TouchableOpacity,
   Keyboard,
+  InteractionManager,
 } from 'react-native';
 import {TextInput} from 'react-native-paper';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -50,12 +50,12 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin, biometric
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
   const [biometricsAvailable, setBiometricsAvailable] = useState(false);
   const [biometricsType, setBiometricsType] = useState('');
-  const [showPinEntry, setShowPinEntry] = useState(false);
+  const [showPinEntry, setShowPinEntry] = useState(true); // Start with PIN entry
   const [isAuthenticatingBiometrics, setIsAuthenticatingBiometrics] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const [hasAttemptedManualUnlock, setHasAttemptedManualUnlock] = useState(false);
   const textInputRef = useRef(null);
-  const unlockInProgress = useRef(false); // Prevent multiple unlock attempts
+  const unlockInProgress = useRef(false);
 
   useEffect(() => {
     if (visible) {
@@ -68,22 +68,14 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin, biometric
       loadFailedAttempts();
       checkBiometricsAvailability();
 
-      // Bring app to front
-      setTimeout(() => {
-        AppLockModule.bringToFront();
-      }, 100);
+      // Bring app to front (only for other apps)
+      if (appInfo?.packageName !== 'com.applock') {
+        setTimeout(() => {
+          AppLockModule.bringToFront();
+        }, 100);
+      }
     }
   }, [visible, appInfo]);
-
-  // Auto-focus text input when in PIN mode
-  useEffect(() => {
-    if (visible && (!showBiometricOption || showPinEntry) && textInputRef.current) {
-      const focusTimer = setTimeout(() => {
-        textInputRef.current?.focus();
-      }, 300);
-      return () => clearTimeout(focusTimer);
-    }
-  }, [visible, showPinEntry]);
 
   const checkBiometricsAvailability = async () => {
     try {
@@ -173,10 +165,7 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin, biometric
       if (success) {
         console.log('✅ Biometric authentication successful');
         await resetFailedAttempts();
-        
-        // IMMEDIATE unlock - no animation delay
         if (onUnlock) {
-          console.log('🔄 Calling onUnlock callback after biometrics');
           onUnlock();
         }
       } else {
@@ -199,100 +188,79 @@ const LockScreen = ({visible, appInfo, onUnlock, onClose, onForgotPin, biometric
     }
   };
 
-// In LockScreen.js, update the handlePinUnlock function:
-const handlePinUnlock = async () => {
-  // Prevent multiple unlock attempts
-  if (unlockInProgress.current) {
-    console.log('⏭️ Unlock already in progress, skipping');
-    return;
-  }
-  
-  Keyboard.dismiss();
-  
-  if (lockUntil && Date.now() < lockUntil) {
-    const remainingTime = Math.ceil((lockUntil - Date.now()) / 1000 / 60);
-    setError(t('lock_screen.too_many_attempts', {minutes: remainingTime}));
-    return;
-  }
-
-  if (pin.length < 4) {
-    setError(t('errors.pin_too_short'));
-    return;
-  }
-
-  unlockInProgress.current = true;
-  setIsLoading(true); // Add this back
-  setError('');
-
-  try {
-    console.log('🔑 Verifying PIN...');
-    const credentials = await Keychain.getGenericPassword({
-      service: 'applock_service',
-    });
-
-    if (credentials && credentials.password === pin) {
-      console.log('✅ PIN verified successfully');
-      await resetFailedAttempts();
-      
-      // CRITICAL FIX: Use immediate callback without delays
-      if (onUnlock) {
-        console.log('🔄 Calling onUnlock callback');
-        onUnlock();
-      }
-    } else {
-      console.log('❌ Invalid PIN');
-      await incrementFailedAttempts();
-      const remainingAttempts = 5 - (failedAttempts + 1);
-      if (remainingAttempts > 0) {
-        setError(
-          t('lock_screen.invalid_pin') +
-            ' ' +
-            t('lock_screen.attempts_remaining', {count: remainingAttempts}),
-        );
-      } else {
-        setError(t('lock_screen.too_many_attempts', {minutes: 5}));
-      }
-      setPin('');
-      shakeError();
+  const handlePinUnlock = async () => {
+    if (unlockInProgress.current) {
+      console.log('⏭️ Unlock already in progress, skipping');
+      return;
     }
-  } catch (error) {
-    console.error('🔑 Keychain error:', error);
-    setError(t('errors.authentication_error'));
-  } finally {
-    setIsLoading(false); // Add this back
-    unlockInProgress.current = false;
-  }
-};
+    
+    Keyboard.dismiss();
+    
+    if (lockUntil && Date.now() < lockUntil) {
+      const remainingTime = Math.ceil((lockUntil - Date.now()) / 1000 / 60);
+      setError(t('lock_screen.too_many_attempts', {minutes: remainingTime}));
+      return;
+    }
+
+    if (pin.length < 4) {
+      setError(t('errors.pin_too_short'));
+      return;
+    }
+
+    unlockInProgress.current = true;
+    setIsLoading(true);
+    setError('');
+
+    try {
+      console.log('🔑 Verifying PIN...');
+      const credentials = await Keychain.getGenericPassword({
+        service: 'applock_service',
+      });
+
+      if (credentials && credentials.password === pin) {
+        console.log('✅ PIN verified successfully');
+        await resetFailedAttempts();
+        
+        if (onUnlock) {
+          onUnlock();
+        }
+      } else {
+        console.log('❌ Invalid PIN');
+        await incrementFailedAttempts();
+        const remainingAttempts = 5 - (failedAttempts + 1);
+        if (remainingAttempts > 0) {
+          setError(
+            t('lock_screen.invalid_pin') +
+              ' ' +
+              t('lock_screen.attempts_remaining', {count: remainingAttempts}),
+          );
+        } else {
+          setError(t('lock_screen.too_many_attempts', {minutes: 5}));
+        }
+        setPin('');
+        shakeError();
+      }
+    } catch (error) {
+      console.error('🔑 Keychain error:', error);
+      setError(t('errors.authentication_error'));
+    } finally {
+      setIsLoading(false);
+      unlockInProgress.current = false;
+    }
+  };
 
   const shakeError = () => {
     Animated.sequence([
-      Animated.timing(shakeAnim, {
-        toValue: 10,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(shakeAnim, {
-        toValue: -10,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(shakeAnim, {
-        toValue: 10,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(shakeAnim, {
-        toValue: 0,
-        duration: 100,
-        useNativeDriver: true,
-      }),
+      Animated.timing(shakeAnim, { toValue: 10, duration: 100, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -10, duration: 100, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 10, duration: 100, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 100, useNativeDriver: true }),
     ]).start();
   };
 
   const handleForgotPin = async () => {
     console.log('🔓 Forgot PIN clicked in LockScreen');
     Keyboard.dismiss();
-    
     if (onForgotPin) {
       onForgotPin();
     }
@@ -302,11 +270,7 @@ const handlePinUnlock = async () => {
     setShowPinEntry(true);
     setError('');
     setIsAuthenticatingBiometrics(false);
-    
-    // Focus the text input
-    setTimeout(() => {
-      textInputRef.current?.focus();
-    }, 100);
+    // Focus will be handled by autoFocus
   };
 
   const switchToBiometrics = () => {
@@ -341,13 +305,14 @@ const handlePinUnlock = async () => {
       visible={visible}
       transparent={false}
       animationType="fade"
-      hardwareAccelerated
+      // hardwareAccelerated REMOVED – fixes rendering issues
       statusBarTranslucent={false}
       onRequestClose={() => {
         Keyboard.dismiss();
       }}
       presentationStyle="fullScreen"
-      supportedOrientations={['portrait', 'landscape']}>
+      supportedOrientations={['portrait', 'landscape']}
+    >
       <View style={styles.container}>
         <StatusBar
           backgroundColor="#FFFFFF"
@@ -497,7 +462,7 @@ const handlePinUnlock = async () => {
                     color="#1E88E5"
                   />
                 }
-                autoFocus={true}
+                autoFocus={true}   // Let React Native handle focus automatically
               />
               
               {/* Switch back to biometrics if available */}
@@ -524,29 +489,29 @@ const handlePinUnlock = async () => {
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
-         {/* Unlock Button (only shown for PIN entry) */}
-{(!showBiometricOption || showPinEntry) && (
-  <TouchableOpacity
-    onPress={handlePinUnlock}
-    disabled={
-      pin.length < 4 ||
-      isLoading ||
-      (lockUntil && Date.now() < lockUntil) ||
-      unlockInProgress.current
-    }
-    style={[
-      styles.unlockButton,
-      (pin.length < 4 ||
-        isLoading ||
-        (lockUntil && Date.now() < lockUntil) ||
-        unlockInProgress.current) &&
-        styles.unlockButtonDisabled,
-    ]}>
-    <Text style={styles.unlockButtonText}>
-      {isLoading ? t('common.loading') : t('lock_screen.unlock')}
-    </Text>
-  </TouchableOpacity>
-)}
+          {/* Unlock Button (only shown for PIN entry) */}
+          {(!showBiometricOption || showPinEntry) && (
+            <TouchableOpacity
+              onPress={handlePinUnlock}
+              disabled={
+                pin.length < 4 ||
+                isLoading ||
+                (lockUntil && Date.now() < lockUntil) ||
+                unlockInProgress.current
+              }
+              style={[
+                styles.unlockButton,
+                (pin.length < 4 ||
+                  isLoading ||
+                  (lockUntil && Date.now() < lockUntil) ||
+                  unlockInProgress.current) &&
+                  styles.unlockButtonDisabled,
+              ]}>
+              <Text style={styles.unlockButtonText}>
+                {isLoading ? t('common.loading') : t('lock_screen.unlock')}
+              </Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             onPress={handleForgotPin}
@@ -572,6 +537,7 @@ const handlePinUnlock = async () => {
   );
 };
 
+// Styles (unchanged, kept as in original)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
