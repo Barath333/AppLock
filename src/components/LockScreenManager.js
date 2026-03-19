@@ -183,24 +183,24 @@ const LockScreenManager = ({
     }
   };
 
-  const handleLockedEvent = event => {
+const handleLockedEvent = event => {
     console.log('🎯 Lock Event Received:', event.packageName);
 
     const currentTime = Date.now();
     if (currentTime - lastEventTime.current < 500) {
-      console.log('⏭️ Event rate limited, skipping');
-      return;
+        console.log('⏭️ Event rate limited, skipping');
+        return;
     }
     lastEventTime.current = currentTime;
 
-    // NEW: JS per-package cooldown
+    // NEW: JS per-package cooldown (3 seconds)
     const cooldownExpiry = packageCooldown.current.get(event.packageName);
     if (cooldownExpiry && currentTime < cooldownExpiry) {
-      console.log(`⏭️ Ignoring event for ${event.packageName} (JS cooldown active)`);
-      return;
+        console.log(`⏭️ Ignoring event for ${event.packageName} (JS cooldown active)`);
+        return;
     }
-    // Set cooldown for this package (2 seconds)
-    packageCooldown.current.set(event.packageName, currentTime + 2000);
+    // Set cooldown for this package (3 seconds)
+    packageCooldown.current.set(event.packageName, currentTime + 3000);
 
     if (event.packageName === lastProcessedPackage.current) {
       console.log('⏭️ Skipping duplicate event for:', event.packageName);
